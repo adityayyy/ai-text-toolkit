@@ -1,0 +1,38 @@
+{
+  "n_test": 300,
+  "accuracy": 0.9633,
+  "precision": 0.9484,
+  "recall": 0.98,
+  "f1": 0.9639,
+  "confusion_matrix": [
+    [
+      142,
+      8
+    ],
+    [
+      3,
+      147
+    ]
+  ],
+  "roc_auc": 0.9957,
+  "cv_accuracy_mean": 0.949,
+  "cv_accuracy_std": 0.0183,
+  "n_train": 1000,
+  "data_source": "HC3 (HuggingFace)",
+  "feature_names": [
+    "perplexity",
+    "burstiness",
+    "avg_sentence_length",
+    "sentence_length_var",
+    "type_token_ratio",
+    "punctuation_ratio",
+    "bigram_uniqueness",
+    "avg_word_length",
+    "pos_noun",
+    "pos_verb",
+    "pos_adj",
+    "pos_adv",
+    "pos_pron",
+    "pos_other"
+  ]
+}

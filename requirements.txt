@@ -1,0 +1,44 @@
+# ai-text-toolkit — Local AI text detector + humanizer
+# Run: pip install -r requirements.txt
+#
+# WINDOWS USERS: For llama-cpp-python (humanizer local backend),
+# the pip wheel may fail to build (needs C++ compiler).
+# EASIEST FIX: Use conda instead:
+#   conda install -c conda-forge llama-cpp-python
+# OR use pre-built wheels:
+#   pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+
+# Core ML / NLP
+torch>=2.0.0
+transformers>=4.35.0
+numpy>=1.24.0
+
+# MUST stay <2.0: transformers 5.x is incompatible with huggingface-hub 2.x
+# (breaks `from huggingface_hub import hf_hub_download` used by detector/train.py)
+huggingface-hub>=0.23.0,<2.0
+
+# POS tagging for stylometric features
+nltk>=3.8.0
+
+# Scikit-learn for classifier
+scikit-learn>=1.3.0
+
+# FastAPI for backend
+fastapi>=0.104.0
+uvicorn[standard]>=0.27.0
+
+# Pydantic for schemas
+pydantic>=2.7.0
+
+# HuggingFace datasets (for HC3 training data)
+datasets>=2.15.0
+
+# HTTP client for the humanizer's OpenAI-compatible API backend
+httpx>=0.25.0
+
+# Optional: llama.cpp bindings for humanizer (local GGUF backend)
+# Windows: prefer conda install, or use pre-built wheels (see comment above)
+llama-cpp-python>=0.3.0
+
+# Serialization
+joblib>=1.3.0

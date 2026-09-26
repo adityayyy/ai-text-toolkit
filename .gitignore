@@ -1,0 +1,59 @@
+# ── Model weights: 1.3 GB, must never be committed ──────────────────
+# Downloaded by run_all.bat / run_all.ps1 (or huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF)
+models/*.gguf
+models/*.gguf.metadata
+
+# HuggingFace download cache (created next to the model)
+models/huggingface/
+models/.cache/
+models/CACHEDIR.TAG
+
+# NOTE: models/detector_logreg.joblib (~1.7 KB) and models/detector_metrics.json
+# ARE committed on purpose, so a fresh clone can Detect without a 10-20 min retrain.
+
+# ── Python ─────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtualenvs
+.venv/
+venv/
+env/
+ENV/
+
+# ── Caches ─────────────────────────────────────────────────────────
+.cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+nltk_data/
+
+# ── Secrets: never commit API keys ─────────────────────────────────
+.env
+.env.*
+*.key
+*.pem
+secrets/
+
+# NOTE: the frontend stores provider API keys in a JS variable only
+# (in-memory, wiped on reload). If you ever add persistence, do NOT commit it.
+
+# ── Logs / temp ────────────────────────────────────────────────────
+*.log
+*.tmp
+*.bak
+Thumbs.db
+desktop.ini
+
+# ── Editors / OS ───────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store

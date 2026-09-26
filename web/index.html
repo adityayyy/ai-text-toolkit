@@ -1,0 +1,1008 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ai-text-toolkit — Detect & Humanize</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@700&family=Patrick+Hand&display=swap" rel="stylesheet">
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+<style>
+  /* ─── CSS Variables (Design Tokens) ─── */
+  :root {
+    --bg: #fafafa;
+    --fg: #1e1e1e;
+    --border: #1e1e1e;
+    --panel-bg: #ffffff;
+    --detect-color: #a5d8ff;
+    --humanize-color: #ffec99;
+    --highlight-ai: #ffd6d6;
+    --shadow-offset: 3px 3px 0 var(--border);
+    --shadow-hover: 4px 4px 0 var(--border);
+    --shadow-active: 1px 1px 0 var(--border);
+    --radius: 8px;
+    --border-w: 2.5px;
+    --font-heading: 'Caveat', cursive;    /* Headings, buttons, labels, word-count */
+    --font-body: 'Patrick Hand', cursive;  /* Body text, textarea, results, footer */
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+
+  /* ─── Reset / Base ─── */
+  * { box-sizing: border-box; }
+  html { font-size: 16px; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    font-family: var(--font-body);
+    background: var(--bg);
+    color: var(--fg);
+    line-height: 1.6;
+    /* Dot-grid background */
+    background-image:
+      radial-gradient(circle, var(--border) 1px, transparent 1px);
+    background-size: 20px 20px;
+    background-position: 0 0;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+
+  /* ─── Layout ─── */
+  .container {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 2rem 1rem 3rem;
+    position: relative;
+  }
+
+  .header {
+    text-align: center;
+    margin-bottom: 2rem;
+  }
+
+  /* Hero doodle + title area */
+  .hero {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+  }
+  .hero-svg {
+    width: 72px;
+    height: 72px;
+    flex-shrink: 0;
+    opacity: 0.6;
+  }
+  .header h1 {
+    font-family: var(--font-heading);
+    font-weight: 700;
+    font-size: 2.75rem;
+    margin: 0;
+    letter-spacing: -0.01em;
+    line-height: 1.1;
+  }
+  .header p {
+    margin: 0.5rem 0 0;
+    opacity: 0.65;
+    font-size: 1.15rem;
+  }
+
+  /* ─── API Key Panel (top-right) ─── */
+  .api-key-panel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 100%;
+    max-width: 340px;
+    z-index: 10;
+  }
+  @media (min-width: 700px) {
+    .api-key-panel {
+      position: absolute;
+      top: 0;
+      right: 0;
+      max-width: 340px;
+      width: auto;
+    }
+  }
+  .api-key-toggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.55rem 0.85rem;
+    font-family: var(--font-heading);
+    font-weight: 700;
+    font-size: 0.9rem;
+    background: var(--panel-bg);
+    border: var(--border-w) solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-offset);
+    cursor: pointer;
+    color: var(--fg);
+    transition: box-shadow 0.1s;
+  }
+  .api-key-toggle:hover {
+    box-shadow: var(--shadow-hover);
+  }
+  .api-key-toggle:focus-visible {
+    outline: 3px solid var(--detect-color);
+    outline-offset: 2px;
+  }
+  .api-key-toggle .icon {
+    font-size: 1rem;
+    transition: transform 0.15s;
+    pointer-events: none;
+  }
+  .api-key-content {
+    margin-top: 0.5rem;
+    padding: 0.85rem;
+    background: var(--panel-bg);
+    border: var(--border-w) solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-offset);
+  }
+  .api-key-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .api-key-row {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+  .api-key-select {
+    flex: 1;
+    min-width: 140px;
+    padding: 0.55rem 0.85rem;
+    font-family: var(--font-heading);
+    font-weight: 700;
+    font-size: 0.85rem;
+    background: var(--panel-bg);
+    border: var(--border-w) solid var(--border);
+    border-radius: var(--radius);
+    color: var(--fg);
+    cursor: pointer;
+    appearance: none;
+  }
+  .api-key-select:focus-visible {
+    outline: 3px solid var(--detect-color);
+    outline-offset: 2px;
+  }
+  .api-key-input-wrapper {
+    position: relative;
+    flex: 1;
+    min-width: 200px;
+  }
+  .api-key-input {
+    width: 100%;
+    padding: 0.55rem 2.5rem 0.55rem 0.85rem;
+    font-family: var(--font-heading);
+    font-weight: 700;
+    font-size: 0.85rem;
+    background: var(--panel-bg);
+    border: var(--border-w) solid var(--border);
+    border-radius: var(--radius);
+    color: var(--fg);
+    outline: none;
+  }
+  .api-key-input:focus {
+    box-shadow: var(--shadow-hover);
+  }
+  .api-key-input::placeholder {
+    color: #999;
+  }
+  .api-key-clear {
+    position: absolute;
+    right: 0.5rem;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    font-family: var(--font-heading);
+    font-weight: 700;
+    font-size: 0.75rem;
+    color: var(--fg);
+    opacity: 0.5;
+    cursor: pointer;
+    padding: 0.25rem 0.5rem;
+  }
+  .api-key-clear:hover {
+    opacity: 1;
+  }
+  .api-key-helper {
+    font-family: var(--font-body);
+    font-size: 0.7rem;
+    opacity: 0.5;
+    line-height: 1.35;
+    margin-top: 0.25rem;
+  }
+
+  /* ─── Panel / Card ─── */
+  .panel {
+    background: var(--panel-bg);
+    border: var(--border-w) solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-offset);
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+
+  /* ─── Textarea with word count ─── */
+  .textarea-wrapper {
+    position: relative;
+  }
+  .textarea-wrapper textarea {
+    width: 100%;
+    min-height: 180px;
+    padding: 1rem;
+    font-family: var(--font-body);
+    font-size: 1.05rem;
+    line-height: 1.7;
+    border: var(--border-w) solid var(--border);
+    border-radius: var(--radius);
+    background: var(--panel-bg);
+    color: var(--fg);
+    resize: vertical;
+    box-shadow: var(--shadow-offset);
+    outline: none;
+  }
+  .textarea-wrapper textarea:focus {
+    box-shadow: var(--shadow-hover);
+  }
+  .textarea-wrapper textarea::placeholder {
+    color: #999;
+  }
+  .word-count {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    font-family: var(--font-heading);
+    font-weight: 700;
+    font-size: 0.8rem;
+    color: var(--fg);
+    opacity: 0.6;
+    background: var(--panel-bg);
+    padding: 0.15rem 0.4rem;
+    border: var(--border-w) solid var(--border);
+    border-radius: 4px;
+    pointer-events: none;
+  }
+
+  /* ─── Buttons ─── */
+  .btn-row {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-top: 1rem;
+  }
+  .btn {
+    appearance: none;
+    border: var(--border-w) solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.85rem 1.75rem;
+    font-family: var(--font-heading);
+    font-weight: 700;
+    font-size: 1rem;
+    cursor: pointer;
+    background: var(--panel-bg);
+    color: var(--fg);
+    box-shadow: var(--shadow-offset);
+    transition: transform 0.05s, box-shadow 0.05s;
+  }
+  .btn:focus-visible {
+    outline: 3px solid var(--detect-color);
+    outline-offset: 2px;
+  }
+  .btn:hover {
+    transform: translate(-1px, -1px);
+    box-shadow: var(--shadow-hover);
+  }
+  .btn:active {
+    transform: translate(2px, 2px);
+    box-shadow: var(--shadow-active);
+  }
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: var(--shadow-offset);
+  }
+  .btn--detect { background: var(--detect-color); }
+  .btn--humanize { background: var(--humanize-color); }
+
+  /* ─── Results Panel ─── */
+  .results {
+    display: none;
+  }
+  .results.visible { display: block; }
+
+  .result-header {
+    display: flex;
+    align-items: baseline;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+  }
+  .score-badge {
+    font-family: var(--font-heading);
+    font-weight: 700;
+    font-size: 1.6rem;
+    padding: 0.3rem 0.85rem;
+    border: var(--border-w) solid var(--border);
+    border-radius: var(--radius);
+    background: var(--panel-bg);
+    box-shadow: var(--shadow-offset);
+  }
+  .score-badge--ai { background: var(--highlight-ai); }
+  .score-badge--human { background: #d4f6d4; }
+  .label-tag {
+    font-family: var(--font-heading);
+    font-weight: 700;
+    font-size: 0.95rem;
+    padding: 0.25rem 0.7rem;
+    border: var(--border-w) solid var(--border);
+    border-radius: 999px;
+    background: var(--panel-bg);
+  }
+
+  .result-sections {
+    display: grid;
+    gap: 1rem;
+  }
+  @media (min-width: 700px) {
+    .result-sections { grid-template-columns: 1fr 1fr; }
+  }
+
+  .section {
+    background: var(--panel-bg);
+    border: var(--border-w) solid var(--border);
+    border-radius: var(--radius);
+    padding: 1rem;
+    box-shadow: var(--shadow-offset);
+  }
+  .section h3 {
+    font-family: var(--font-heading);
+    font-weight: 700;
+    font-size: 1.05rem;
+    margin: 0 0 0.75rem;
+    border-bottom: var(--border-w) solid var(--border);
+    padding-bottom: 0.5rem;
+  }
+
+  /* Feature breakdown */
+  .features { display: grid; gap: 0.5rem; }
+  .feature-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    font-size: 0.9rem;
+  }
+  .feature-name { opacity: 0.65; font-family: var(--font-body); }
+  .feature-value { font-family: var(--mono); font-weight: 700; }
+
+  /* Sentence scores */
+  .sentence-list { display: flex; flex-direction: column; gap: 0.5rem; }
+  .sentence-item {
+    padding: 0.6rem 0.85rem;
+    border: var(--border-w) solid var(--border);
+    border-radius: var(--radius);
+    background: var(--panel-bg);
+    position: relative;
+  }
+  .sentence-item.ai-high { background: var(--highlight-ai); }
+  .sentence-text { font-family: var(--font-body); font-size: 0.95rem; line-height: 1.6; }
+  .sentence-score {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.85rem;
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--fg);
+    opacity: 0.8;
+  }
+
+  /* Before/After for humanize */
+  .ba-row {
+    display: grid;
+    gap: 1rem;
+  }
+  @media (min-width: 600px) {
+    .ba-row { grid-template-columns: 1fr 1fr; }
+  }
+  .ba-card {
+    padding: 1rem;
+    border: var(--border-w) solid var(--border);
+    border-radius: var(--radius);
+    background: var(--panel-bg);
+    box-shadow: var(--shadow-offset);
+  }
+  .ba-card h4 { font-family: var(--font-heading); font-weight: 700; margin: 0 0 0.5rem; font-size: 0.95rem; opacity: 0.65; }
+  .ba-score { font-family: var(--mono); font-size: 2.25rem; font-weight: 700; }
+  .ba-card--original .ba-score { color: #c00; }
+  .ba-card--humanized .ba-score { color: #080; }
+  .ba-delta {
+    margin-top: 0.5rem;
+    font-family: var(--font-heading);
+    font-size: 0.9rem;
+    font-weight: 700;
+  }
+  .ba-delta.negative { color: #080; }
+  .ba-delta.positive { color: #c00; }
+
+  /* Error / Loading */
+  .error {
+    padding: 1rem;
+    border: var(--border-w) solid #c00;
+    border-radius: var(--radius);
+    background: #ffeaea;
+    color: #c00;
+    font-family: var(--font-heading);
+    font-weight: 700;
+  }
+  .loading {
+    display: none;
+    text-align: center;
+    padding: 2rem;
+    font-family: var(--font-heading);
+    font-weight: 700;
+  }
+  .loading.visible { display: block; }
+  .spinner {
+    display: inline-block;
+    width: 1.5rem; height: 1.5rem;
+    border: 3px solid var(--border);
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin-right: 0.5rem;
+    vertical-align: middle;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Footer */
+  .footer {
+    text-align: center;
+    margin-top: 2rem;
+    font-size: 0.9rem;
+    opacity: 0.55;
+    font-family: var(--font-body);
+  }
+  .footer a { color: var(--fg); text-decoration: underline; }
+
+  /* ─── Score interpretation ─── */
+  .score-interpretation {
+    font-family: var(--font-body);
+    font-size: 0.9rem;
+    opacity: 0.7;
+    margin-top: 0.5rem;
+    line-height: 1.5;
+  }
+
+  /* Empty state */
+  .empty-state {
+    text-align: center;
+    opacity: 0.5;
+    font-family: var(--font-body);
+    font-size: 1rem;
+    padding: 2rem 1rem;
+    color: var(--fg);
+  }
+
+  /* Responsive */
+  @media (max-width: 480px) {
+    .container { padding: 1.5rem 0.75rem 2rem; }
+    .header h1 { font-size: 2rem; }
+    .api-key-panel { max-width: 100%; }
+    .api-key-row { flex-direction: column; }
+    .api-key-select, .api-key-input-wrapper { min-width: 100%; }
+    .btn-row { flex-direction: column; }
+    .btn { width: 100%; }
+    .result-sections, .ba-row { grid-template-columns: 1fr; }
+    .hero-svg { width: 56px; height: 56px; }
+    .header h1 { font-size: 2rem; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <!-- API Key Panel (top-right) - Alpine.js -->
+  <div class="api-key-panel" x-data="{ open: false, provider: 'local', apiKey: '' }" @click.outside="open = false">
+    <button @click="open = !open" class="api-key-toggle" aria-expanded="false" aria-label="Toggle API key settings">
+      <span>API Key (optional)</span>
+      <span class="icon" aria-hidden="true" x-text="open ? '▴' : '▾'"></span>
+    </button>
+    <div x-show="open" x-transition class="api-key-content" x-cloak>
+      <div class="api-key-field">
+        <div class="api-key-row">
+          <select class="api-key-select" x-model="provider" aria-label="API provider">
+            <option value="local">Local (default)</option>
+            <option value="gemini">Gemini</option>
+            <option value="openai">OpenAI</option>
+            <option value="nvidia">NVIDIA</option>
+          </select>
+        </div>
+        <div class="api-key-row" x-show="provider !== 'local'" x-transition>
+          <div class="api-key-input-wrapper">
+            <input type="password" class="api-key-input" x-model="apiKey" placeholder="Enter API key" aria-label="API key" autocomplete="off">
+            <button type="button" class="api-key-clear" @click="apiKey = ''" aria-label="Clear API key">Clear</button>
+          </div>
+        </div>
+        <p class="api-key-helper">Used only in your browser. Never sent to or stored on our server. Cleared on page reload.</p>
+      </div>
+    </div>
+  </div>
+
+  <header class="header">
+    <div class="hero">
+      <svg class="hero-svg" viewBox="0 0 72 72" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <!-- Human: pencil + hand -->
+        <g stroke="#1e1e1e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none">
+          <path d="M12 54 L18 48 L14 44 L10 48 Z" fill="#1e1e1e" opacity="0.15"/>
+          <path d="M12 54 L18 48 L14 44 L10 48 Z"/>
+          <path d="M14 44 L16 40 L20 42"/>
+          <path d="M16 40 L18 37"/>
+        </g>
+        <!-- VS squiggle -->
+        <g stroke="#1e1e1e" stroke-width="1.5" stroke-linecap="round" fill="none" opacity="0.7">
+          <path d="M30 34 Q33 38 36 34 Q39 30 42 34 Q45 38 48 34 Q51 30 54 34 Q51 30 54 34"/>
+        </g>
+        <!-- Robot: head + antenna -->
+        <g stroke="#1e1e1e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none">
+          <rect x="50" y="24" width="14" height="14" rx="3"/>
+          <path d="M53 24 L53 18 M57 24 L57 18"/>
+          <circle cx="53.5" cy="29" r="1.2" fill="#1e1e1e"/>
+          <circle cx="59.5" cy="29" r="1.2" fill="#1e1e1e"/>
+          <path d="M52 34 Q57 36 62 34" stroke="#1e1e1e" stroke-width="1.5" stroke-linecap="round" fill="none" opacity="0.5"/>
+          <path d="M52 22 L50 19 L48 22" stroke="#1e1e1e" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+          <circle cx="49" cy="18" r="1.5" fill="#1e1e1e" opacity="0.6"/>
+        </g>
+        <!-- Perplexity wave -->
+        <g stroke="#1e1e1e" stroke-width="1.5" stroke-linecap="round" fill="none" opacity="0.5">
+          <path d="M8 50 Q12 46 16 50 Q20 54 24 50 Q28 46 32 50 Q36 54 40 50 Q44 46 48 50 Q52 54 56 50 Q60 46 64 50"/>
+        </g>
+      </svg>
+      <div>
+        <h1>ai-text-toolkit</h1>
+        <p>Runs on your machine. Nothing you paste here ever leaves it.</p>
+      </div>
+    </div>
+  </header>
+
+  <!-- Input Panel -->
+  <section class="panel" aria-labelledby="input-heading">
+    <h2 id="input-heading" style="margin:0 0 1rem;font-size:1.1rem;">Input Text</h2>
+    <div class="textarea-wrapper">
+      <textarea id="inputText" placeholder="Paste something suspicious. Or something you wrote and want to loosen up." aria-label="Input text"></textarea>
+      <div class="word-count" aria-live="polite" aria-atomic="true">0 words</div>
+    </div>
+    <div class="btn-row">
+      <button id="btnDetect" class="btn btn--detect" type="button">Detect</button>
+      <button id="btnHumanize" class="btn btn--humanize" type="button">Humanize</button>
+    </div>
+    <div id="errorBox" class="error" style="display:none;margin-top:1rem;"></div>
+  </section>
+
+  <!-- Loading -->
+  <div id="loading" class="loading" aria-live="polite">
+    <span class="spinner" aria-hidden="true"></span>
+    <span id="loadingText">Working…</span>
+  </div>
+
+  <!-- Results Panel (Detect) -->
+  <section id="resultsDetect" class="panel results" aria-labelledby="detect-results-heading">
+    <header class="result-header">
+      <div id="detectScore" class="score-badge">—</div>
+      <span id="detectLabel" class="label-tag">—</span>
+    </header>
+    <div class="result-sections">
+      <div class="section">
+        <h3>Signal Breakdown</h3>
+        <div id="features" class="features"></div>
+      </div>
+      <div class="section">
+        <h3>Sentence Scores (high = AI-like)</h3>
+        <div id="sentences" class="sentence-list"></div>
+      </div>
+    </div>
+    <div id="detectInterpretation" class="score-interpretation" style="display:none;"></div>
+    <div id="detectEmptyState" class="empty-state" style="display:block;">Nothing to judge yet</div>
+  </section>
+
+  <!-- Results Panel (Humanize) -->
+  <section id="resultsHumanize" class="panel results" aria-labelledby="humanize-results-heading">
+    <h2 id="humanize-results-heading" style="margin:0 0 1rem;font-size:1.1rem;">Humanized</h2>
+    <div id="humanizedText" style="white-space:pre-wrap;font-family:var(--font-body);line-height:1.7;margin-bottom:1rem;"></div>
+    <div class="ba-row">
+      <article class="ba-card ba-card--original">
+        <h4>Original AI Probability</h4>
+        <div id="origScore" class="ba-score">—%</div>
+      </article>
+      <article class="ba-card ba-card--humanized">
+        <h4>Humanized AI Probability</h4>
+        <div id="newScore" class="ba-score">—%</div>
+        <div id="delta" class="ba-delta"></div>
+      </article>
+    </div>
+    <p style="margin-top:1rem;font-size:0.85rem;opacity:0.7;">
+      Backend: <span id="backendUsed">—</span> • Time: <span id="hzTime">—</span>s
+    </p>
+  </section>
+
+  <footer class="footer">
+    <p>GPT-2 under the hood. No servers, no accounts, no tracking.</p>
+  </footer>
+</div>
+
+<script>
+/* ─── SECURITY NOTICE ───
+   API KEY HANDLING - CRITICAL SECURITY CONSTRAINTS
+   - API key stored ONLY in module-level JS variable (let apiKey = '')
+   - NEVER written to localStorage, sessionStorage, or any persistent storage
+   - NEVER sent to our FastAPI backend, logged, or included in analytics
+   - Key wiped on page refresh/reload by design (in-memory only)
+   - DO NOT "improve" this by adding localStorage persistence
+   - DO NOT log the key via console.log or any other means
+   - If any endpoint is added that could capture it, explicitly reject/ignore
+*/
+
+/* ─── Config ─── */
+// API base URL - change this if your API runs on a different host/port
+const API_BASE_URL = 'http://localhost:8000';
+
+/* Show API base in footer for debugging */
+function showApiBase() {
+  const footer = document.querySelector('.footer p');
+  if (footer && API_BASE_URL) {
+    const badge = document.createElement('span');
+    badge.style.cssText = 'margin-left:1rem;padding:0.15rem 0.5rem;background:var(--detect-color);border:2.5px solid var(--border);border-radius:4px;font-size:0.75rem;font-family:var(--mono);';
+    badge.textContent = 'API: ' + API_BASE_URL;
+    footer.appendChild(badge);
+  }
+}
+showApiBase();
+
+/* ─── External API Key State (IN-MEMORY ONLY) ─── */
+let apiKey = '';           // In-memory only - wiped on refresh
+let apiProvider = 'local'; // 'local' | 'gemini' | 'openai' | 'nvidia'
+
+/* ─── DOM Refs ─── */
+const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => document.querySelectorAll(sel);
+
+const inputText = $('#inputText');
+const wordCount = $('.word-count');
+const btnDetect = $('#btnDetect');
+const btnHumanize = $('#btnHumanize');
+const errorBox = $('#errorBox');
+const loading = $('#loading');
+const loadingText = $('#loadingText');
+
+const resultsDetect = $('#resultsDetect');
+const detectScore = $('#detectScore');
+const detectLabel = $('#detectLabel');
+const featuresEl = $('#features');
+const sentencesEl = $('#sentences');
+const detectInterpretation = $('#detectInterpretation');
+const detectEmptyState = $('#detectEmptyState');
+
+const resultsHumanize = $('#resultsHumanize');
+const humanizedText = $('#humanizedText');
+const origScore = $('#origScore');
+const newScore = $('#newScore');
+const deltaEl = $('#delta');
+const backendUsed = $('#backendUsed');
+const hzTime = $('#hzTime');
+
+/* ─── Helpers ─── */
+function setError(msg) {
+  errorBox.textContent = msg;
+  errorBox.style.display = msg ? 'block' : 'none';
+}
+function setLoading(show, text = 'Working…') {
+  loadingText.textContent = text;
+  loading.classList.toggle('visible', show);
+  btnDetect.disabled = show;
+  btnHumanize.disabled = show;
+}
+function hideResults() {
+  resultsDetect.classList.remove('visible');
+  resultsHumanize.classList.remove('visible');
+  detectEmptyState.style.display = 'none';
+}
+function wordCountUpdate() {
+  const text = inputText.value.trim();
+  const count = text ? text.split(/\s+/).length : 0;
+  wordCount.textContent = `${count} word${count !== 1 ? 's' : ''}`;
+}
+
+/* ─── System Prompt (shared with local pipeline) ─── */
+const HUMANIZE_SYSTEM_PROMPT = `You are a text humanizer. Rewrite the input text to sound more natural and human-written, while preserving the exact meaning and information content.
+
+Guidelines:
+- Vary sentence length and structure significantly (short, medium, long sentences mixed)
+- Use contractions naturally (don't, can't, it's, I've, you're, etc.)
+- Introduce minor imperfections: occasional redundancy, conversational fillers, varied transitions
+- Avoid AI-typical phrasing: "In conclusion", "It is important to note", "Furthermore", "Moreover", "Additionally", "delve", "tapestry", "navigate", "unlock", "foster", "leverage", "robust framework", "plays a crucial role", "in essence", "overall", "therefore", "nevertheless", "firstly", "secondly"
+- Don't use overly balanced parallel structure in every sentence
+- Keep the original meaning 100% intact — no hallucination, no added facts
+- Write like a real person explaining something to a friend: natural flow, personal voice
+- Preserve formatting (paragraphs, lists, code blocks) if present
+
+Return ONLY the rewritten text, no explanations or meta-commentary.`;
+
+/* ─── External API Calls ─── */
+async function callGeminiAPI(text, key) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(key)}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [
+        { role: 'user', parts: [{ text: `${HUMANIZE_SYSTEM_PROMPT}\n\nRewrite this text to sound more natural and human:\n\n${text}` }] }
+      ],
+      generationConfig: { temperature: 0.7, topP: 0.9, maxOutputTokens: 512 }
+    })
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || `Gemini API error: ${res.status}`);
+  }
+  const data = await res.json();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+}
+
+async function callOpenAIAPI(text, key) {
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${key}`
+    },
+    body: JSON.stringify({
+      model: 'gpt-3.5-turbo',
+      messages: [
+        { role: 'system', content: HUMANIZE_SYSTEM_PROMPT },
+        { role: 'user', content: `Rewrite this text to sound more natural and human:\n\n${text}` }
+      ],
+      temperature: 0.7,
+      top_p: 0.9,
+      max_tokens: 512
+    })
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || `OpenAI API error: ${res.status}`);
+  }
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content?.trim() || '';
+}
+
+async function callNvidiaAPI(text, key) {
+  const res = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${key}`
+    },
+    body: JSON.stringify({
+      model: 'nvidia/nemotron-3-ultra',
+      messages: [
+        { role: 'system', content: HUMANIZE_SYSTEM_PROMPT },
+        { role: 'user', content: `Rewrite this text to sound more natural and human:\n\n${text}` }
+      ],
+      temperature: 0.7,
+      top_p: 0.9,
+      max_tokens: 512
+    })
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error?.message || `NVIDIA API error: ${res.status}`);
+  }
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content?.trim() || '';
+}
+
+/* ─── External Humanize Flow ─── */
+async function humanizeExternal(text) {
+  if (!apiKey) throw new Error('No API key provided');
+  
+  let humanized;
+  if (apiProvider === 'gemini') {
+    humanized = await callGeminiAPI(text, apiKey);
+  } else if (apiProvider === 'openai') {
+    humanized = await callOpenAIAPI(text, apiKey);
+  } else if (apiProvider === 'nvidia') {
+    humanized = await callNvidiaAPI(text, apiKey);
+  } else {
+    throw new Error('Unknown provider');
+  }
+  
+  if (!humanized) throw new Error('Empty response from API');
+  return humanized;
+}
+
+/* ─── API Calls ─── */
+async function apiDetect(text) {
+  const res = await fetch(`${API_BASE_URL}/detect`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+async function apiHumanize(text, opts = {}) {
+  const res = await fetch(`${API_BASE_URL}/humanize`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, ...opts }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+/* ─── Render Detect Results ─── */
+function renderDetect(data) {
+  const p = data.ai_probability;
+  detectScore.textContent = `${p.toFixed(1)}%`;
+  detectScore.className = 'score-badge ' + (data.is_ai ? 'score-badge--ai' : 'score-badge--human');
+  detectLabel.textContent = data.label;
+
+  // Score interpretation
+  let interpretation = '';
+  if (p > 70) {
+    interpretation = 'Reads like it was written by a model, not a person.';
+  } else if (p < 30) {
+    interpretation = 'Reads human to me.';
+  } else {
+    interpretation = 'Hard to say for sure — could go either way.';
+  }
+  detectInterpretation.textContent = interpretation;
+  detectInterpretation.style.display = 'block';
+  detectEmptyState.style.display = 'none';
+
+  // Features
+  featuresEl.innerHTML = '';
+  const fb = data.feature_breakdown;
+  const featureOrder = [
+    ['perplexity', 'Perplexity'],
+    ['burstiness', 'Burstiness'],
+    ['avg_sentence_length', 'Avg Sentence Length'],
+    ['sentence_length_var', 'Sentence Length Variance'],
+    ['type_token_ratio', 'Type-Token Ratio'],
+    ['punctuation_ratio', 'Punctuation Ratio'],
+    ['bigram_uniqueness', 'Bigram Uniqueness'],
+    ['avg_word_length', 'Avg Word Length'],
+    ['pos_noun', 'POS: Nouns'],
+    ['pos_verb', 'POS: Verbs'],
+    ['pos_adj', 'POS: Adjectives'],
+    ['pos_adv', 'POS: Adverbs'],
+    ['pos_pron', 'POS: Pronouns'],
+    ['pos_other', 'POS: Other'],
+  ];
+  for (const [key, label] of featureOrder) {
+    if (fb[key] !== undefined) {
+      const row = document.createElement('div');
+      row.className = 'feature-row';
+      row.innerHTML = `<span class="feature-name">${label}</span><span class="feature-value">${Number(fb[key]).toFixed(key.includes('ratio') || key.includes('pos_') ? 4 : 2)}</span>`;
+      featuresEl.appendChild(row);
+    }
+  }
+
+  // Sentences
+  sentencesEl.innerHTML = '';
+  for (const s of data.sentence_scores) {
+    const item = document.createElement('div');
+    item.className = 'sentence-item' + (s.ai_score >= 70 ? ' ai-high' : '');
+    item.innerHTML = `<span class="sentence-text">${escapeHtml(s.sentence)}</span><span class="sentence-score">${s.ai_score.toFixed(1)}%</span>`;
+    sentencesEl.appendChild(item);
+  }
+
+  resultsDetect.classList.add('visible');
+  resultsHumanize.classList.remove('visible');
+}
+
+/* ─── Render Humanize Results ─── */
+function renderHumanize(data) {
+  humanizedText.textContent = data.humanized_text;
+  origScore.textContent = `${data.original_ai_probability.toFixed(1)}%`;
+  if (data.humanized_ai_probability !== null && data.humanized_ai_probability !== undefined) {
+    newScore.textContent = `${data.humanized_ai_probability.toFixed(1)}%`;
+    const delta = data.humanized_ai_probability - data.original_ai_probability;
+    deltaEl.textContent = `${delta >= 0 ? '+' : ''}${delta.toFixed(1)}%`;
+    deltaEl.className = 'ba-delta ' + (delta < 0 ? 'negative' : 'positive');
+  } else {
+    newScore.textContent = '—%';
+    deltaEl.textContent = '';
+  }
+  backendUsed.textContent = data.backend_used;
+  hzTime.textContent = data.elapsed_seconds.toFixed(2);
+
+  resultsHumanize.classList.add('visible');
+  resultsDetect.classList.remove('visible');
+}
+
+/* ─── Escape HTML ─── */
+// Pasted text is untrusted and rendered via innerHTML, so it MUST be escaped.
+const HTML_ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, (c) => HTML_ESCAPES[c]);
+}
+
+/* ─── Event Handlers ─── */
+inputText.addEventListener('input', wordCountUpdate);
+
+btnDetect.addEventListener('click', async () => {
+  const text = inputText.value.trim();
+  if (!text) { setError('Please enter some text first.'); return; }
+  setError('');
+  hideResults();
+  setLoading(true, 'Analyzing…');
+  try {
+    const data = await apiDetect(text);
+    renderDetect(data);
+  } catch (e) {
+    setError(e.message);
+  } finally {
+    setLoading(false);
+  }
+});
+
+btnHumanize.addEventListener('click', async () => {
+  const text = inputText.value.trim();
+  if (!text) { setError('Please enter some text first.'); return; }
+  setError('');
+  hideResults();
+  setLoading(true, 'Humanizing…');
+  try {
+    let data;
+    if (apiProvider === 'local') {
+      // Local backend via our API
+      data = await apiHumanize(text, { re_detect: true });
+    } else {
+      // External API - call directly from browser, then re-detect via our API
+      const t0 = performance.now();
+      const humanized = await humanizeExternal(text);
+      const detectRes = await apiDetect(humanized);
+      const elapsed = (performance.now() - t0) / 1000;
+      data = {
+        original_text: text,
+        humanized_text: humanized,
+        original_ai_probability: 0, // Will be filled below
+        humanized_ai_probability: detectRes.ai_probability,
+        backend_used: apiProvider,
+        elapsed_seconds: elapsed.toFixed(2),
+      };
+      // Get original probability for comparison
+      const origDetect = await apiDetect(text);
+      data.original_ai_probability = origDetect.ai_probability;
+    }
+    renderHumanize(data);
+  } catch (e) {
+    setError(e.message || 'Humanize failed — check your API key and try again');
+  } finally {
+    setLoading(false);
+  }
+});
+
+/* ─── Init ─── */
+wordCountUpdate();
+</script>
+</body>
+</html>
