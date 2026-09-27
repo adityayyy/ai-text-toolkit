@@ -1,5 +1,13 @@
 # ai-text-toolkit
 
+> **Note:** This project was built for personal learning — to understand how
+> AI-text detection and local LLM inference work under the hood. It is not a
+> polished product and should not be relied on for high-stakes decisions
+> (e.g. academic integrity enforcement, content moderation, or anything where
+> a wrong call has real consequences). Detection accuracy is meaningfully
+> lower against current-generation AI models (see Known Limitations below) —
+> treat results as a signal, not a verdict.
+
 Fully local, free, open-source **AI text detector + AI humanizer**.
 Runs on a CPU-only laptop (8-16GB RAM). No paid APIs, no cloud dependencies.
 
@@ -204,6 +212,19 @@ ai-text-toolkit/
 ├── CONTEXT.md
 └── README.md
 ```
+
+## Known Limitations
+
+- Trained on HC3 (2022-2023 ChatGPT vs. human text) — accuracy is meaningfully
+  lower against current-generation models (Claude, GPT-4/5-class, Gemini),
+  which is a known industry-wide limitation, not unique to this project.
+- Per-sentence AI scoring uses a heuristic (perplexity z-score + cliché bonus),
+  not a dedicated classifier — see code comments for upgrade path.
+- This is not a substitute for a commercial detection service and should not
+  be used as the sole basis for accusations of AI use.
+- GPT-2's 1024-token context window means documents longer than ~750 words
+  are truncated for the perplexity/burstiness signal specifically (stylometric
+  features still process the full document).
 
 ---
 

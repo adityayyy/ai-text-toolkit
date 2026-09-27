@@ -486,6 +486,58 @@
     line-height: 1.5;
   }
 
+  /* ─── Secondary LLM detection opinion (opt-in, never blocks local result) ─── */
+  .llm-opinion {
+    margin-top: 1rem;
+    padding: 1rem;
+    border: var(--border-w) solid var(--border);
+    border-radius: var(--radius);
+    background: #fff7e6;
+    box-shadow: var(--shadow-offset);
+  }
+  .llm-opinion.is-error { background: #ffeaea; border-color: #c00; }
+  .llm-opinion-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+  }
+  .llm-opinion-title {
+    font-family: var(--font-heading);
+    font-weight: 700;
+    font-size: 1rem;
+  }
+  .llm-opinion-score {
+    font-family: var(--mono);
+    font-weight: 700;
+    font-size: 1.1rem;
+  }
+  .llm-opinion-reasoning {
+    font-family: var(--font-body);
+    font-size: 0.9rem;
+    line-height: 1.5;
+    margin: 0.5rem 0;
+  }
+  .llm-opinion-footnote {
+    font-family: var(--font-body);
+    font-size: 0.75rem;
+    opacity: 0.6;
+    margin-top: 0.5rem;
+    font-style: italic;
+  }
+  .llm-opinion-error {
+    font-family: var(--font-heading);
+    font-weight: 700;
+    color: #c00;
+    font-size: 0.85rem;
+  }
+  .llm-opinion-loading {
+    font-family: var(--font-heading);
+    font-size: 0.85rem;
+    opacity: 0.7;
+  }
+
   /* Empty state */
   .empty-state {
     text-align: center;
@@ -587,6 +639,12 @@
       <button id="btnDetect" class="btn btn--detect" type="button">Detect</button>
       <button id="btnHumanize" class="btn btn--humanize" type="button">Humanize</button>
     </div>
+    <div class="llm-secondary-toggle" id="llmSecondaryToggle" style="display:none;margin-top:0.75rem;">
+      <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;font-family:var(--font-heading);font-size:0.9rem;">
+        <input type="checkbox" id="llmAsk" style="width:auto;">
+        <span id="llmAskLabel">Also ask <span id="llmAskProvider">—</span> (uses your API key)</span>
+      </label>
+    </div>
     <div id="errorBox" class="error" style="display:none;margin-top:1rem;"></div>
   </section>
 
@@ -613,6 +671,16 @@
       </div>
     </div>
     <div id="detectInterpretation" class="score-interpretation" style="display:none;"></div>
+    <!-- Secondary LLM opinion - opt-in, never blocks the local detector -->
+    <div id="llmOpinion" class="llm-opinion" style="display:none;">
+      <div class="llm-opinion-header">
+        <span class="llm-opinion-title" id="llmOpinionTitle">AI Opinion</span>
+        <span class="llm-opinion-score" id="llmOpinionScore">—</span>
+      </div>
+      <div class="llm-opinion-error" id="llmOpinionError"></div>
+      <div class="llm-opinion-reasoning" id="llmOpinionReasoning"></div>
+      <div class="llm-opinion-footnote">LLM self-assessment - less reliable than the local detector's measured signals, shown for comparison only</div>
+    </div>
     <div id="detectEmptyState" class="empty-state" style="display:block;">Nothing to judge yet</div>
   </section>
 
@@ -693,6 +761,17 @@ const sentencesEl = $('#sentences');
 const detectInterpretation = $('#detectInterpretation');
 const detectEmptyState = $('#detectEmptyState');
 
+// Secondary LLM detection opinion (opt-in checkbox only)
+const llmAsk = $('#llmAsk');
+const llmAskLabel = $('#llmAskLabel');
+const llmAskProvider = $('#llmAskProvider');
+const llmSecondaryToggle = $('#llmSecondaryToggle');
+const llmOpinion = $('#llmOpinion');
+const llmOpinionTitle = $('#llmOpinionTitle');
+const llmOpinionScore = $('#llmOpinionScore');
+const llmOpinionError = $('#llmOpinionError');
+const llmOpinionReasoning = $('#llmOpinionReasoning');
+
 const resultsHumanize = $('#resultsHumanize');
 const humanizedText = $('#humanizedText');
 const origScore = $('#origScore');
@@ -715,12 +794,25 @@ function setLoading(show, text = 'Working…') {
 function hideResults() {
   resultsDetect.classList.remove('visible');
   resultsHumanize.classList.remove('visible');
+  llmOpinion.style.display = 'none';
   detectEmptyState.style.display = 'none';
 }
 function wordCountUpdate() {
   const text = inputText.value.trim();
   const count = text ? text.split(/\s+/).length : 0;
   wordCount.textContent = `${count} word${count !== 1 ? 's' : ''}`;
+  // Show the opt-in checkbox only when an external provider + key are set
+  const names = { gemini: 'Gemini', openai: 'OpenAI', nvidia: 'NVIDIA' };
+  const provider = apiProvider;
+  if (provider !== 'local' && apiKey) {
+    llmAskProvider.textContent = names[provider] || provider;
+    llmAskLabel.innerHTML = `Also ask <span id="llmAskProvider">${names[provider] || provider}</span> (uses your API key)`;
+    llmSecondaryToggle.style.display = 'block';
+    llmAsk.checked = false;
+  } else {
+    llmSecondaryToggle.style.display = 'none';
+    llmAsk.checked = false;
+  }
 }
 
 /* ─── System Prompt (shared with local pipeline) ─── */
@@ -740,75 +832,63 @@ Return ONLY the rewritten text, no explanations or meta-commentary.`;
 
 /* ─── External API Calls ─── */
 async function callGeminiAPI(text, key) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(key)}`;
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [
-        { role: 'user', parts: [{ text: `${HUMANIZE_SYSTEM_PROMPT}\n\nRewrite this text to sound more natural and human:\n\n${text}` }] }
-      ],
-      generationConfig: { temperature: 0.7, topP: 0.9, maxOutputTokens: 512 }
-    })
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error?.message || `Gemini API error: ${res.status}`);
-  }
-  const data = await res.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+  return callLLM('gemini', `${HUMANIZE_SYSTEM_PROMPT}\n\nRewrite this text to sound more natural and human:\n\n${text}`, key);
 }
 
+/* ─── Single shared external-LLM client ─── */
+// One function for all three providers. Gemini uses contents/parts + generationConfig;
+// OpenAI and NVIDIA use the OpenAI-compatible messages API.
+async function callLLM(provider, prompt, key) {
+  if (!key) throw new Error('No API key provided');
+
+  const url = provider === 'gemini'
+    ? `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${encodeURIComponent(key)}`
+    : provider === 'openai'
+      ? 'https://api.openai.com/v1/chat/completions'
+      : 'https://integrate.api.nvidia.com/v1/chat/completions';
+
+  const headers = { 'Content-Type': 'application/json' };
+  if (provider === 'openai' || provider === 'nvidia') {
+    headers['Authorization'] = `Bearer ${key}`;
+  }
+
+  const body = provider === 'gemini'
+    ? {
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.7, topP: 0.9, maxOutputTokens: 512 }
+      }
+    : {
+        model: provider === 'nvidia' ? 'nvidia/nemotron-3-ultra' : 'gpt-3.5-turbo',
+        messages: [
+          { role: 'system', content: HUMANIZE_SYSTEM_PROMPT },
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.7,
+        top_p: 0.9,
+        max_tokens: 512
+      };
+
+  const res = await fetch(url, { method: 'POST', headers, body });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const msg = err.error?.message || err.message || `${provider} API error: ${res.status}`;
+    throw new Error(msg);
+  }
+
+  const data = await res.json();
+  return (provider === 'gemini'
+    ? data.candidates?.[0]?.content?.parts?.[0]?.text?.trim()
+    : data.choices?.[0]?.message?.content?.trim()) || '';
+}
+
+async function callGeminiAPI(text, key) {
+  return callLLM('gemini', `${HUMANIZE_SYSTEM_PROMPT}\n\nRewrite this text to sound more natural and human:\n\n${text}`, key);
+}
 async function callOpenAIAPI(text, key) {
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${key}`
-    },
-    body: JSON.stringify({
-      model: 'gpt-3.5-turbo',
-      messages: [
-        { role: 'system', content: HUMANIZE_SYSTEM_PROMPT },
-        { role: 'user', content: `Rewrite this text to sound more natural and human:\n\n${text}` }
-      ],
-      temperature: 0.7,
-      top_p: 0.9,
-      max_tokens: 512
-    })
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error?.message || `OpenAI API error: ${res.status}`);
-  }
-  const data = await res.json();
-  return data.choices?.[0]?.message?.content?.trim() || '';
+  return callLLM('openai', `${HUMANIZE_SYSTEM_PROMPT}\n\nRewrite this text to sound more natural and human:\n\n${text}`, key);
 }
-
 async function callNvidiaAPI(text, key) {
-  const res = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${key}`
-    },
-    body: JSON.stringify({
-      model: 'nvidia/nemotron-3-ultra',
-      messages: [
-        { role: 'system', content: HUMANIZE_SYSTEM_PROMPT },
-        { role: 'user', content: `Rewrite this text to sound more natural and human:\n\n${text}` }
-      ],
-      temperature: 0.7,
-      top_p: 0.9,
-      max_tokens: 512
-    })
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error?.message || `NVIDIA API error: ${res.status}`);
-  }
-  const data = await res.json();
-  return data.choices?.[0]?.message?.content?.trim() || '';
+  return callLLM('nvidia', `${HUMANIZE_SYSTEM_PROMPT}\n\nRewrite this text to sound more natural and human:\n\n${text}`, key);
 }
 
 /* ─── External Humanize Flow ─── */
@@ -828,6 +908,39 @@ async function humanizeExternal(text) {
   
   if (!humanized) throw new Error('Empty response from API');
   return humanized;
+}
+
+/* ─── Secondary LLM detection opinion ───
+   Client-side only. The key is never sent to our backend - it goes straight
+   to the provider's API. This is an opt-in, secondary opinion; the local
+   detector always runs first and is the primary result.
+   ponytail: a single shared client (callLLM) is reused for the humanizer and
+   this detector - one provider implementation, not three. */
+async function askLLMDetect(text) {
+  if (!apiKey) throw new Error('No API key provided');
+  if (apiProvider === 'local') throw new Error('Select an external provider first');
+
+  const prompt =
+    'Analyze the following text and assess the likelihood it was written by ' +
+    'an AI language model versus a human. Respond in this exact format:\n' +
+    'LIKELIHOOD: [0-100]\n' +
+    'REASONING: [one sentence]\n\n' +
+    'Text: ' + text;
+
+  const raw = await callLLM(apiProvider, prompt, apiKey);
+  const match = raw.match(/LIKELIHOOD:\s*(\d{1,3})/i);
+  const reasoning = (raw.match(/REASONING:\s*(.+)/i) || [null, null])[1];
+
+  let likelihood = null;
+  if (match) likelihood = Math.min(100, Math.max(0, parseInt(match[1], 10)));
+
+  if (likelihood === null) throw new Error('Could not parse likelihood from response');
+
+  return {
+    provider: apiProvider,
+    likelihood,
+    reasoning: (reasoning || '').trim().slice(0, 300),
+  };
 }
 
 /* ─── API Calls ─── */
@@ -858,7 +971,8 @@ async function apiHumanize(text, opts = {}) {
 }
 
 /* ─── Render Detect Results ─── */
-function renderDetect(data) {
+  // llm = optional secondary opinion from askLLMDetect(); null/undefined => none
+  function renderDetect(data, llm = null) {
   const p = data.ai_probability;
   detectScore.textContent = `${p.toFixed(1)}%`;
   detectScore.className = 'score-badge ' + (data.is_ai ? 'score-badge--ai' : 'score-badge--human');
@@ -914,6 +1028,23 @@ function renderDetect(data) {
     sentencesEl.appendChild(item);
   }
 
+  // Secondary LLM opinion - hidden when not requested
+  llmOpinion.style.display = llm ? 'block' : 'none';
+  if (llm) {
+    llmOpinionTitle.textContent = 'AI Opinion (via ' + (llm.provider || 'LLM') + ')';
+    if (llm.error) {
+      llmOpinion.classList.add('is-error');
+      llmOpinionScore.textContent = '—';
+      llmOpinionError.textContent = llm.error;
+      llmOpinionReasoning.textContent = '';
+    } else {
+      llmOpinion.classList.remove('is-error');
+      llmOpinionScore.textContent = llm.likelihood + '%';
+      llmOpinionReasoning.textContent = llm.reasoning || '(no reasoning provided)';
+      llmOpinionError.textContent = '';
+    }
+  }
+
   resultsDetect.classList.add('visible');
   resultsHumanize.classList.remove('visible');
 }
@@ -955,8 +1086,21 @@ btnDetect.addEventListener('click', async () => {
   hideResults();
   setLoading(true, 'Analyzing…');
   try {
+    // Local detector ALWAYS runs first and is the primary result.
     const data = await apiDetect(text);
-    renderDetect(data);
+
+    // Optional secondary LLM opinion - opt-in, client-side only, never blocks
+    // the local result. Failures are shown inline in the sub-panel only.
+    let llm = null;
+    if (llmAsk.checked && apiProvider !== 'local' && apiKey) {
+      try {
+        llm = await askLLMDetect(text);
+      } catch (e) {
+        llm = { error: e.message, provider: apiProvider };
+      }
+    }
+
+    renderDetect(data, llm);
   } catch (e) {
     setError(e.message);
   } finally {
