@@ -18,6 +18,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from typing import Literal
+import httpx
 
 # Ensure project root is on path for absolute imports
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -76,6 +78,91 @@ class HumanizeResponse(BaseModel):
     humanized_ai_probability: float = None
     backend_used: str
     elapsed_seconds: float
+
+
+# ── External provider proxy schemas ────────────────────────────────────
+class ExternalHumanizeRequest(BaseModel):
+    text: str = Field(..., min_length=1, max_length=10000, description="Text to humanize")
+    provider: Literal["gemini", "openai", "nvidia"]
+    api_key: str = Field(..., description="API key for the external provider (never logged/stored)")
+    temperature: float = Field(default=0.7, ge=0.0, le=2.0)
+    top_p: float = Field(default=0.9, ge=0.0, le=1.0)
+    max_tokens: int = Field(default=512, ge=1, le=2048)
+
+
+class ExternalHumanizeResponse(BaseModel):
+    humanized_text: str
+    provider: str
+    elapsed_seconds: float
+
+
+# Helper: call external provider via our proxy (server-to-provider, avoids CORS)
+# CRITICAL: api_key is used ONLY in-memory for this single outbound request.
+# It is NEVER logged, stored, or persisted beyond the scope of this handler.
+async def call_external_provider(provider: str, prompt: str, api_key: str, temperature: float, max_tokens: int) -> str:
+    if provider == "gemini":
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+        body = {
+            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+            "generationConfig": {"temperature": temperature, "topP": 0.9, "maxOutputTokens": max_tokens}
+        }
+        headers = {"Content-Type": "application/json"}
+    elif provider == "openai":
+        url = "https://api.openai.com/v1/chat/completions"
+        body = {
+            "model": "gpt-3.5-turbo",
+            "messages": [
+                {"role": "system", "content": HUMANIZE_SYSTEM_PROMPT},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.7,
+            "top_p": 0.9,
+            "max_tokens": max_tokens
+        }
+        headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
+    elif provider == "nvidia":
+        url = "https://integrate.api.nvidia.com/v1/chat/completions"
+        body = {
+            "model": "nvidia/nemotron-3-ultra",
+            "messages": [
+                {"role": "system", "content": HUMANIZE_SYSTEM_PROMPT},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": 0.7,
+            "top_p": 0.9,
+            "max_tokens": max_tokens
+        }
+        headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
+    else:
+        raise HTTPException(400, f"Unknown provider: {provider}")
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        res = await client.post(url, json=body, headers=headers)
+        if not res.is_success:
+            err = res.json() if res.headers.get("content-type", "").startswith("application/json") else {}
+            msg = err.get("error", {}).get("message") or err.get("message") or f"{provider} API error: {res.status_code}"
+            raise HTTPException(res.status_code, msg)
+        data = res.json()
+    if provider == "gemini":
+        return data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
+    else:
+        return data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+
+
+# ── Shared system prompt (must be at module level for proxy) ───────────
+HUMANIZE_SYSTEM_PROMPT = """You are a text humanizer. Rewrite the input text to sound more natural and human-written, while preserving the exact meaning and information content.
+
+Guidelines:
+- Vary sentence length and structure significantly (short, medium, long sentences mixed)
+- Use contractions naturally (don't, can't, it's, I've, you're, etc.)
+- Introduce minor imperfections: occasional redundancy, conversational fillers, varied transitions
+- Avoid AI-typical phrasing: "In conclusion", "It is important to note", "Furthermore", "Moreover", "Additionally", "delve", "tapestry", "navigate", "unlock", "foster", "leverage", "robust framework", "plays a crucial role", "in essence", "overall", "therefore", "nevertheless", "firstly", "secondly"
+- Don't use overly balanced parallel structure in every sentence
+- Keep the original meaning 100% intact — no hallucination, no added facts
+- Write like a real person explaining something to a friend: natural flow, personal voice
+- Preserve formatting (paragraphs, lists, code blocks) if present
+
+Return ONLY the rewritten text, no explanations or meta-commentary."""
 
 
 # ── Startup / shutdown ─────────────────────────────────────────────
@@ -206,6 +293,37 @@ async def humanize(req: HumanizeRequest):
         elapsed_seconds=result.elapsed_seconds,
     )
     return resp
+
+
+# ── External provider proxy endpoint ───────────────────────────────────
+# Proxies humanize requests to external providers (Gemini/OpenAI/NVIDIA)
+# to avoid CORS issues. The API key is passed in the request body and is
+# used ONLY in-memory for the single outbound request — NEVER logged,
+# stored, or persisted beyond this handler's scope.
+@app.post("/humanize-external", response_model=ExternalHumanizeResponse)
+async def humanize_external(req: ExternalHumanizeRequest):
+    # Build the prompt with system instructions + user text
+    prompt = f"{HUMANIZE_SYSTEM_PROMPT}\n\nRewrite this text to sound more natural and human:\n\n{req.text}"
+
+    import time
+    t0 = time.time()
+    humanized = await call_external_provider(
+        provider=req.provider,
+        prompt=prompt,
+        api_key=req.api_key,
+        temperature=req.temperature,
+        max_tokens=req.max_tokens,
+    )
+    elapsed = time.time() - t0
+
+    if not humanized:
+        raise HTTPException(502, f"Empty response from {req.provider}")
+
+    return ExternalHumanizeResponse(
+        humanized_text=humanized,
+        provider=req.provider,
+        elapsed_seconds=round(elapsed, 2),
+    )
 
 
 # ── Entrypoint ─────────────────────────────────────────────────────
