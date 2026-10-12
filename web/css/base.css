@@ -1,0 +1,75 @@
+/* ─── Base Styles ─── */
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 16px;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--desk);
+  color: var(--ink);
+  font-family: var(--font-proof);
+  font-size: 1.0625rem;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--red);
+  color: var(--on-red);
+}
+
+/* Custom scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--hairline-2) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--hairline-2);
+  border: 3px solid var(--desk);
+  border-radius: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Focus styles */
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* Layout */
+.desk-wrap {
+  max-width: 56rem;
+  margin: 0 auto;
+  padding: 1.75rem 1.25rem 3rem;
+}
+
+/* Responsive */
+@media (max-width: 560px) {
+  .desk-wrap {
+    padding: 1.25rem 0.9rem 2.25rem;
+  }
+}

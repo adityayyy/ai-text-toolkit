@@ -1,0 +1,42 @@
+/* ─── Design Tokens: The Copy Desk ───
+   Stark paper on a flat desk; ink; proof red = queries/detection;
+   correction green = the human pass; 1px hairlines; sharp 2px corners. */
+
+:root {
+  --desk: #eeedeb;
+  --sheet: #ffffff;
+  --ink: #1b1915;
+  --ink-2: #6b675e;        /* secondary text, 4.9:1 on sheet */
+  --hairline: #e3e0d8;
+  --hairline-2: #cfcabf;   /* emphasised rules */
+  --red: #c22f21;          /* proof red — detection only */
+  --red-ink: #c22f21;      /* red as text (light) */
+  --red-soft: #faeeec;
+  --on-red: #ffffff;
+  --green: #1e7a4c;
+  --green-ink: #1e7a4c;
+  --green-soft: #edf5f0;
+  --focus: #c22f21;
+  --sheet-shadow: 0 14px 28px -20px rgba(27, 25, 21, 0.35);
+  --font-proof: 'Spectral', Georgia, serif;
+  --font-label: 'Archivo Narrow', 'Arial Narrow', sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+[data-theme="dark"] {
+  --desk: #151412;
+  --sheet: #1f1d1a;
+  --ink: #ece9e1;
+  --ink-2: #a59f93;
+  --hairline: #38342e;
+  --hairline-2: #4a453d;
+  --red: #ff8175;
+  --red-ink: #ff9c92;
+  --red-soft: #38221e;
+  --on-red: #1b1915;
+  --green: #57c48f;
+  --green-ink: #6fd3a2;
+  --green-soft: #1e2f26;
+  --focus: #ff8175;
+  --sheet-shadow: 0 14px 28px -20px rgba(0, 0, 0, 0.8);
+}

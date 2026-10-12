@@ -139,12 +139,14 @@ $corePkgs = @(
     "transformers>=4.35.0",
     "nltk>=3.8.0",
     "scikit-learn>=1.3.0",
-    "fastapi>=0.104.0",
+    "fastapi>=0.109.0",
     "uvicorn[standard]>=0.27.0",
     "pydantic>=2.7.0",
+    "pydantic-settings>=2.1.0",
     "datasets>=2.15.0",
     "joblib>=1.3.0",
-    "httpx"
+    "httpx",
+    "typing-extensions>=4.8.0"
 )
 if ($ForceReinstall) { $corePkgs = $corePkgs | ForEach-Object { "--force-reinstall $_" } }
 $installArgs = @("install") + $corePkgs
@@ -187,68 +189,62 @@ python "$PROJECT_ROOT\scripts\download_nltk_data.py"
 # ─────────────────────────────────────────────────────────────────
 Write-Host ""
 Write-Host "============================================================" -ForegroundColor Cyan
-Write-Host "  [4/8] Fixing huggingface-hub version (transformers compat)..." -ForegroundColor Yellow
+Write-Host "  [4/7] Fixing huggingface-hub version (transformers compat)..." -ForegroundColor Yellow
 Write-Host "============================================================" -ForegroundColor Cyan
 pip install "huggingface-hub>=1.5.0,<2.0" --force-reinstall 2>&1 | Where-Object { $_ -notlike "*WARNING*" }
 
 # ─────────────────────────────────────────────────────────────────
 # 5. Download Hugging Face GGUF model (for local humanizer)
 # ─────────────────────────────────────────────────────────────────
-if (-not $SkipModel) {
-    Write-Host ""
-    Write-Host "============================================================" -ForegroundColor Cyan
-    Write-Host "  [5/8] Downloading GGUF model: $Model..." -ForegroundColor Yellow
-    Write-Host "============================================================" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "============================================================" -ForegroundColor Cyan
+Write-Host "  [5/7] Downloading GGUF model: $Model..." -ForegroundColor Yellow
+Write-Host "============================================================" -ForegroundColor Cyan
 
-    $modelPath = Join-Path $PROJECT_ROOT "models\$Model"
-    if (Test-Path $modelPath) {
-        Write-Host "  [OK] Model already exists: $Model" -ForegroundColor Green
-    } else {
-        Write-Host "  Downloading $Model (~1-2 GB)..." -ForegroundColor Gray
-        $urls = @(
-            "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/$Model",
-            "https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf/resolve/main/$Model"
-        )
-        $downloaded = $false
-        foreach ($url in $urls) {
-            try {
-                Write-Host "  Trying: $url" -ForegroundColor Gray
-                Invoke-WebRequest -Uri $url -OutFile $modelPath -ErrorAction Stop
-                $downloaded = $true
-                break
-            } catch {
-                Write-Host "  Failed: $url" -ForegroundColor Yellow
-            }
-        }
-        if (-not $downloaded) {
-            Write-Warning "Failed to download $Model from known repos."
-            Write-Warning "  You can download manually from HuggingFace and place in models\"
-            Write-Warning "  Example: https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF"
-        } else {
-            Write-Host "  [OK] Model saved to: $modelPath" -ForegroundColor Green
+$modelPath = Join-Path $PROJECT_ROOT "models\$Model"
+if (Test-Path $modelPath) {
+    Write-Host "  [OK] Model already exists: $Model" -ForegroundColor Green
+} else {
+    Write-Host "  Downloading $Model (~1-2 GB)..." -ForegroundColor Gray
+    $urls = @(
+        "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/$Model",
+        "https://huggingface.co/microsoft/Phi-3-mini-4k-instruct-gguf/resolve/main/$Model"
+    )
+    $downloaded = $false
+    foreach ($url in $urls) {
+        try {
+            Write-Host "  Trying: $url" -ForegroundColor Gray
+            Invoke-WebRequest -Uri $url -OutFile $modelPath -ErrorAction Stop
+            $downloaded = $true
+            break
+        } catch {
+            Write-Host "  Failed: $url" -ForegroundColor Yellow
         }
     }
-} else {
-    Write-Host "  Skipping model download (--SkipModel specified)" -ForegroundColor Yellow
+    if (-not $downloaded) {
+        Write-Warning "Failed to download $Model from known repos."
+        Write-Warning "  You can download manually from HuggingFace and place in models\"
+        Write-Warning "  Example: https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF"
+    } else {
+        Write-Host "  [OK] Model saved to: $modelPath" -ForegroundColor Green
+    }
 }
 
 # ─────────────────────────────────────────────────────────────────
-# 6. Train detector
+# 6. Train detector (using new module structure)
 # ─────────────────────────────────────────────────────────────────
 Write-Host ""
 Write-Host "============================================================" -ForegroundColor Cyan
-Write-Host "  [5/7] Checking detector model..." -ForegroundColor Yellow
+Write-Host "  [6/7] Checking detector model..." -ForegroundColor Yellow
 Write-Host "============================================================" -ForegroundColor Cyan
 
 $modelPath = Join-Path $PROJECT_ROOT "models\detector_logreg.joblib"
-if (Test-Path $modelPath -and -not $SkipTrain) {
+if (Test-Path $modelPath) {
     Write-Host "[OK] Detector already trained. Skipping..." -ForegroundColor Green
-} elseif ($SkipTrain) {
-    Write-Host "Skipping training (--SkipTrain specified)" -ForegroundColor Yellow
 } else {
     Write-Host "Training detector on HC3 (500 train + 150 test per class)..." -ForegroundColor Yellow
     Write-Host "This takes ~10-20 minutes on CPU. Please wait..." -ForegroundColor Gray
-    python -m detector.train
+    python -m core.detector.training
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Training failed."
         exit 1
@@ -258,16 +254,7 @@ if (Test-Path $modelPath -and -not $SkipTrain) {
 }
 
 # ─────────────────────────────────────────────────────────────────
-# 7. Fix huggingface-hub version again (in case training upgraded it)
-# ─────────────────────────────────────────────────────────────────
-Write-Host ""
-Write-Host "============================================================" -ForegroundColor Cyan
-Write-Host "  [7/8] Re-verifying huggingface-hub version..." -ForegroundColor Yellow
-Write-Host "============================================================" -ForegroundColor Cyan
-pip install "huggingface-hub>=1.5.0,<2.0" --force-reinstall 2>&1 | Where-Object { $_ -notlike "*WARNING*" }
-
-# ─────────────────────────────────────────────────────────────────
-# 8. Start API server + serve frontend
+# 7. Start API server + serve frontend
 # ─────────────────────────────────────────────────────────────────
 Write-Host ""
 Write-Host "============================================================" -ForegroundColor Cyan

@@ -18,7 +18,7 @@ Runs on a CPU-only laptop (8-16GB RAM). No paid APIs, no cloud dependencies.
 | **1. Detector** | ✅ Done | GPT-2 small perplexity + burstiness + 14-dim stylometrics → LogisticRegression classifier |
 | **2. Humanizer** | ✅ Done | Swappable backend (local GGUF via llama-cpp-python / OpenAI-compatible API), re-detects after rewrite |
 | **3. API** | ✅ Done | FastAPI: `POST /detect`, `POST /humanize` (chains to detector) |
-| **4. Frontend** | ✅ Done | Hand-drawn sketch style HTML/CSS/JS (Kalam font, dot grid, sticky-note buttons) |
+| **4. Frontend** | ✅ Done | Editorial proof desk style (Spectral + Archivo Narrow, light/dark, modular JS) |
 
 ---
 
@@ -61,7 +61,7 @@ pip install -r requirements.txt
 Invoke-WebRequest "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf" -OutFile "models\qwen2.5-1.5b-instruct-q4_k_m.gguf"
 
 # 3. Train detector (one-time, ~10-20 min)
-python -m detector.train
+python -m core.detector.training
 
 # 4. Start API
 python -m api.main
@@ -88,6 +88,105 @@ python -m http.server 3000 --directory web  # → open http://localhost:3000
 .\run_all.ps1 -SkipDevTools      # Skip dev tools install
 .\run_all.ps1 -Model "Phi-3-mini-4k-instruct-q4_k_m.gguf"  # Different model
 ```
+
+---
+
+## New Architecture (v0.2)
+
+```
+ai-text-toolkit/
+├── config/                 # Environment configuration
+│   ├── __init__.py
+│   ├── settings.py         # Pydantic Settings (env config)
+│   └── constants.py        # Shared constants (feature names, prompts, etc.)
+├── core/                   # Business logic (pure Python, no FastAPI)
+│   ├── __init__.py
+│   ├── exceptions.py       # Custom exceptions
+│   ├── detector/           # Detection engine
+│   │   ├── __init__.py
+│   │   ├── models.py       # Data models (Pydantic/dataclasses)
+│   │   ├── perplexity.py   # GPT-2 perplexity + burstiness
+│   │   ├── stylometric.py  # Hand-computed features + AI clichés
+│   │   ├── classifier.py   # StandardScaler + LogisticRegression
+│   │   ├── features.py     # Feature extraction pipeline
+│   │   ├── pipeline.py     # Main AIDetector class
+│   │   └── training.py     # HC3 training + CV + metrics
+│   └── humanizer/          # Text rewriting engine
+│       ├── __init__.py
+│       ├── models.py       # Data models
+│       ├── backends/       # Generation backends
+│       │   ├── __init__.py
+│       │   ├── base.py     # Abstract base class
+│       │   ├── llama_cpp.py # Local GGUF backend
+│       │   └── openai_compat.py # OpenAI-compatible API backend
+│       ├── prompts.py      # System prompts (single source)
+│       └── pipeline.py     # Humanizer class + factory
+├── api/                    # FastAPI layer (thin)
+│   ├── __init__.py
+│   ├── main.py             # App factory + lifespan
+│   ├── dependencies.py     # FastAPI DI (detector, humanizer)
+│   ├── schemas.py          # Pydantic request/response
+│   └── routes/
+│       ├── __init__.py
+│       ├── detect.py       # /detect endpoint
+│       ├── humanize.py     # /humanize endpoint
+│       ├── external.py     # /humanize-external proxy
+│       └── health.py       # /health endpoint
+├── web/                    # Frontend (modular)
+│   ├── index.html          # Minimal HTML shell
+│   ├── css/
+│   │   ├── variables.css   # Design tokens (light/dark)
+│   │   ├── base.css        # Base styles
+│   │   ├── components.css  # Component styles
+│   │   └── themes.css      # Theme overrides
+│   ├── js/
+│   │   ├── app.js          # Main entry point
+│   │   ├── state.js        # Centralized state management
+│   │   ├── api.js          # API client
+│   │   ├── components/
+│   │   │   ├── textarea.js # Input handling
+│   │   │   ├── results.js  # Results rendering
+│   │   │   ├── api-key.js  # API key dropdown
+│   │   │   └── theme.js    # Theme toggle
+│   │   └── utils/
+│   │       ├── dom.js      # DOM utilities
+│   │       └── helpers.js  # Format helpers
+│   └── favicon.svg
+├── models/                 # Trained models (unchanged)
+│   ├── detector_logreg.joblib
+│   └── detector_metrics.json
+├── scripts/
+│   └── download_nltk_data.py
+├── tests/
+│   ├── __init__.py
+│   ├── test_core.py        # Core business logic tests
+│   └── test_api.py         # API integration tests
+├── .env.example            # Environment template
+├── pyproject.toml          # Modern Python packaging
+├── requirements.txt
+├── requirements-dev.txt
+├── Makefile                # Cross-platform commands
+├── run_all.ps1             # One-click full setup (PowerShell)
+├── run_all.bat             # One-click full setup (CMD)
+├── CONTEXT.md
+├── DESIGN.md
+├── LICENSE
+└── README.md
+```
+
+---
+
+## Key Improvements in v0.2
+
+- **Clean separation**: Business logic (`core/`) completely separated from API layer (`api/`)
+- **Environment config**: `.env` file via Pydantic Settings, no hardcoded paths
+- **Modular frontend**: CSS split into variables/base/components/themes; JS split into state/api/components/utils
+- **State management**: Centralized reactive state (`js/state.js`) with subscriptions
+- **Proper error handling**: Custom exceptions (`core/exceptions.py`), consistent HTTP errors
+- **Dependency injection**: FastAPI `Depends` for detector/humanizer singletons
+- **Single source of truth**: Prompts, feature names, constants in `config/constants.py`
+- **Tests**: Unit tests for core logic, integration tests for API
+- **Modern packaging**: `pyproject.toml` with `ruff`, `black`, `mypy`, `pytest`
 
 ---
 
@@ -183,35 +282,51 @@ Returns: `original_text`, `humanized_text`, `original_ai_probability`, `humanize
 
 ---
 
-## Project Structure
+## Development
 
+```bash
+# Install dev dependencies
+pip install -r requirements-dev.txt
+pre-commit install
+
+# Run tests
+make test
+
+# Lint & format
+make lint
+make format
+
+# Type check
+make typecheck
+
+# Train detector
+make train
+# or: python -m core.detector.training --n 100 --test 50  (fast)
+
+# Start API
+make serve
+
+# Serve frontend
+make frontend
 ```
-ai-text-toolkit/
-├── detector/           # Detection engine
-│   ├── __init__.py
-│   ├── perplexity.py   # GPT-2 perplexity + burstiness
-│   ├── stylometric.py  # Hand-computed features + AI clichés
-│   ├── classifier.py   # StandardScaler + LogisticRegression
-│   ├── detector.py     # Main AIDetector pipeline
-│   ├── train.py        # HC3 training + CV + metrics
-│   └── evaluate.py     # Accuracy report
-├── humanizer/          # Text rewriting engine
-│   ├── __init__.py
-│   └── humanizer.py    # Swappable backends, re-detect chain
-├── api/                # FastAPI backend
-│   ├── __init__.py
-│   └── main.py         # /detect, /humanize, /health
-├── web/                # Frontend
-│   └── index.html      # Hand-drawn sketch style
-├── models/             # Trained model + GGUF weights
-│   ├── detector_logreg.joblib
-│   └── detector_metrics.json
-├── run_all.ps1         # One-click full setup (PowerShell)
-├── run_all.bat         # One-click full setup (CMD)
-├── requirements.txt
-├── CONTEXT.md
-└── README.md
+
+**Available Make targets:**
 ```
+make help        # Show all targets
+make install     # Install prod deps
+make install-dev # Install dev deps
+make train       # Train detector
+make train-fast  # Quick training (100 samples)
+make serve       # Start API server
+make frontend    # Serve frontend on :3000
+make test        # Run tests
+make lint        # Run ruff
+make format      # Format with black
+make typecheck   # Run mypy
+make clean       # Clean cache
+```
+
+---
 
 ## Known Limitations
 
@@ -232,7 +347,7 @@ ai-text-toolkit/
 
 - **GPT-2 small** for perplexity: fastest CPU option (~124M params). Swap via `PerplexityComputer(model_name=...)`.
 - **Single document-level classifier**: StandardScaler + LogisticRegression. Upgrade: swap inside same Pipeline.
-- **14-dim fixed feature vector**: `FEATURE_NAMES` in `detector.py` is single source of truth.
+- **14-dim fixed feature vector**: `FEATURE_NAMES` in `config/constants.py` is single source of truth.
 - **Per-sentence AI score = heuristic** (perplexity z-score + cliché bonus). Flagged in code; upgrade path = per-sentence classifier.
 - **HC3 dataset** loaded via raw JSONL (bypasses deprecated loading script in datasets 5.x).
 - **Auto GPU detection**: CUDA / MPS / DirectML / Intel XPU / CPU fallback.
@@ -246,7 +361,7 @@ ai-text-toolkit/
 |-------|-----|
 | `llama-cpp-python` build fails | Use pre-built wheel: `pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu` or `conda install -c conda-forge llama-cpp-python` |
 | `torchvision` import error | `pip uninstall torchvision` (not needed; broken with torch 2.13+) |
-| `datasets` load fails | Fixed in `train.py` — uses raw JSONL via `huggingface_hub` |
+| `datasets` load fails | Fixed in `core/detector/training.py` — uses raw JSONL via `huggingface_hub` |
 | Path with spaces | Always quote: `cd "C:\path\ai detector\ai-text-toolkit"` |
 | Humanizer 503 error | Set `HUMANIZER_BACKEND` + model path or API URL |
 
@@ -258,7 +373,7 @@ ai-text-toolkit/
 | Issue | Fix |
 |-------|-----|
 | HC3 load fails | Check internet; offline fallback activates with warning |
-| Detector not trained | Run `python -m detector.train` first |
+| Detector not trained | Run `python -m core.detector.training` first |
 | Humanizer 503 | Set `HUMANIZER_BACKEND` + model path or API URL |
 | Port 8000 in use | `uvicorn api.main:app --port 8001` |
 
