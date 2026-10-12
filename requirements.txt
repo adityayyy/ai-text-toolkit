@@ -15,7 +15,7 @@ numpy>=1.24.0
 
 # MUST stay <2.0: transformers 5.x is incompatible with huggingface-hub 2.x
 # (breaks `from huggingface_hub import hf_hub_download` used by core/detector/training.py)
-huggingface-hub>=0.23.0,<2.0
+huggingface-hub>=0.23.0,<3.0
 
 # POS tagging for stylometric features
 nltk>=3.8.0
