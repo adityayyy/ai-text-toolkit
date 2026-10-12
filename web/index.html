@@ -4,8 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ai-text-toolkit — Detect & Humanize</title>
-<link rel="icon" href="favicon.svg" type="image/svg+xml">
-
+<link rel="icon" href="favicon.ico">
 <!-- Theme before first paint (no flash): stored choice, else system preference -->
 <script>
 try {
@@ -14,16 +13,481 @@ try {
   if (t) document.documentElement.dataset.theme = t;
 } catch (e) { /* file:// or blocked storage — default light */ }
 </script>
-
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Archivo+Narrow:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* ─── Design tokens: The Copy Desk ───
+     Stark paper on a flat desk; ink; proof red = queries/detection;
+     correction green = the human pass; 1px hairlines; sharp 2px corners. */
+  :root {
+    --desk: #eeedeb;
+    --sheet: #ffffff;
+    --ink: #1b1915;
+    --ink-2: #6b675e;        /* secondary text, 4.9:1 on sheet */
+    --hairline: #e3e0d8;
+    --hairline-2: #cfcabf;   /* emphasised rules */
+    --red: #c22f21;          /* proof red — detection only */
+    --red-ink: #c22f21;      /* red as text (light) */
+    --red-soft: #faeeec;
+    --on-red: #ffffff;
+    --green: #1e7a4c;
+    --green-ink: #1e7a4c;
+    --green-soft: #edf5f0;
+    --focus: #c22f21;
+    --sheet-shadow: 0 14px 28px -20px rgba(27, 25, 21, 0.35);
+    --font-proof: 'Spectral', Georgia, serif;
+    --font-label: 'Archivo Narrow', 'Arial Narrow', sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  [data-theme="dark"] {
+    --desk: #151412;
+    --sheet: #1f1d1a;
+    --ink: #ece9e1;
+    --ink-2: #a59f93;
+    --hairline: #38342e;
+    --hairline-2: #4a453d;
+    --red: #ff8175;
+    --red-ink: #ff9c92;
+    --red-soft: #38221e;
+    --on-red: #1b1915;
+    --green: #57c48f;
+    --green-ink: #6fd3a2;
+    --green-soft: #1e2f26;
+    --focus: #ff8175;
+    --sheet-shadow: 0 14px 28px -20px rgba(0, 0, 0, 0.8);
+  }
 
-<!-- Modular CSS -->
-<link rel="stylesheet" href="css/variables.css">
-<link rel="stylesheet" href="css/base.css">
-<link rel="stylesheet" href="css/components.css">
-<link rel="stylesheet" href="css/themes.css">
+  /* ─── Base ─── */
+  * { box-sizing: border-box; }
+  html { font-size: 16px; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: var(--desk);
+    color: var(--ink);
+    font-family: var(--font-proof);
+    font-size: 1.0625rem;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: var(--red); color: var(--on-red); }
+  * { scrollbar-width: thin; scrollbar-color: var(--hairline-2) transparent; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: var(--hairline-2); border: 3px solid var(--desk); border-radius: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 2px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+
+  /* ─── Layout ─── */
+  .desk-wrap { max-width: 56rem; margin: 0 auto; padding: 1.75rem 1.25rem 3rem; }
+
+  /* ─── Masthead ─── */
+  .masthead {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    padding-bottom: 1.1rem;
+    border-bottom: 1px solid var(--hairline-2);
+    margin-bottom: 1.75rem;
+  }
+  .masthead > div,
+  .masthead-tools {
+    min-width: 0;
+  }
+  .masthead h1 {
+    font-family: var(--font-proof);
+    font-weight: 600;
+    font-size: 2rem;
+    letter-spacing: -0.02em;
+    line-height: 1.05;
+    margin: 0;
+  }
+  .masthead .privacy-slug {
+    margin: 0.4rem 0 0;
+    font-family: var(--font-label);
+    font-weight: 600;
+    font-size: 0.72rem;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+  }
+  .masthead-tools { display: flex; align-items: center; gap: 0.5rem; position: relative; }
+
+  /* Small square controls (theme, api key) */
+  .ctl {
+    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    background: var(--sheet);
+    color: var(--ink);
+    border: 1px solid var(--hairline-2);
+    border-radius: 2px;
+    padding: 0.5rem 0.8rem;
+    font-family: var(--font-label);
+    font-weight: 700;
+    font-size: 0.78rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: border-color 0.15s ease-out;
+  }
+  .ctl:hover { border-color: var(--ink); }
+  .ctl svg { width: 15px; height: 15px; stroke: var(--ink); fill: none; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+
+  /* API key dropdown */
+  .apikey-panel {
+    position: absolute;
+    top: calc(100% + 0.5rem);
+    right: 0;
+    width: min(21rem, calc(100vw - 2.5rem));
+    background: var(--sheet);
+    border: 1px solid var(--hairline-2);
+    border-radius: 2px;
+    box-shadow: var(--sheet-shadow);
+    padding: 1rem;
+    z-index: 30;
+  }
+  .apikey-panel[hidden] { display: none; }
+  .apikey-panel select,
+  .apikey-panel input[type="password"] {
+    width: 100%;
+    background: var(--sheet);
+    color: var(--ink);
+    border: 1px solid var(--hairline-2);
+    border-radius: 2px;
+    padding: 0.55rem 0.7rem;
+    font-family: var(--font-label);
+    font-weight: 600;
+    font-size: 0.85rem;
+  }
+  .apikey-panel select { cursor: pointer; }
+  .apikey-panel input::placeholder { color: var(--ink-2); }
+  .apikey-row { display: flex; flex-direction: column; gap: 0.5rem; }
+  .apikey-row + .apikey-row { margin-top: 0.6rem; }
+  .apikey-clear-wrap { position: relative; }
+  .apikey-clear {
+    position: absolute;
+    right: 0.45rem;
+    top: 50%;
+    transform: translateY(-50%);
+    appearance: none;
+    background: none;
+    border: none;
+    font-family: var(--font-label);
+    font-weight: 700;
+    font-size: 0.75rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+    cursor: pointer;
+    padding: 0.15rem 0.3rem;
+  }
+  .apikey-clear:hover { color: var(--ink); }
+  .apikey-helper {
+    margin: 0.6rem 0 0;
+    font-size: 0.78rem;
+    line-height: 1.45;
+    color: var(--ink-2);
+  }
+
+  /* ─── Proof sheet (input) ─── */
+  .proof-heading {
+    font-family: var(--font-proof);
+    font-weight: 600;
+    font-size: 1.35rem;
+    letter-spacing: -0.01em;
+    margin: 0 0 0.9rem;
+  }
+  .sheet {
+    background: var(--sheet);
+    border: 1px solid var(--hairline-2);
+    border-radius: 2px;
+    box-shadow: var(--sheet-shadow);
+  }
+  .sheet--textarea { position: relative; }
+  .sheet--textarea textarea {
+    display: block;
+    width: 100%;
+    min-height: 230px;
+    padding: 1.35rem 1.5rem 1.6rem;
+    background: transparent;
+    color: var(--ink);
+    border: none;
+    resize: vertical;
+    font-family: var(--font-proof);
+    font-size: 1.0625rem;
+    line-height: 1.75;
+    caret-color: var(--red);
+  }
+  .sheet--textarea textarea:focus { outline: none; }
+  .sheet--textarea textarea::placeholder { color: var(--ink-2); opacity: 1; }
+  .word-slug {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    border-top: 1px solid var(--hairline);
+    padding: 0.45rem 1.5rem;
+    font-family: var(--font-label);
+    font-weight: 600;
+    font-size: 0.75rem;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
+  }
+
+  /* ─── Actions ─── */
+  .actions { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 1.1rem; }
+  .btn {
+    appearance: none;
+    border: 1px solid transparent;
+    border-radius: 2px;
+    padding: 0.8rem 1.7rem;
+    font-family: var(--font-label);
+    font-weight: 700;
+    font-size: 0.95rem;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: transform 0.15s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .btn:hover { transform: translateY(-1px); box-shadow: 0 6px 12px -8px rgba(27, 25, 21, 0.5); }
+  .btn:active { transform: translateY(0); box-shadow: none; }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; box-shadow: none; }
+  .btn--detect { background: var(--red); color: var(--on-red); }
+  .btn--humanize { background: var(--sheet); color: var(--ink); border-color: var(--ink); }
+
+  /* Secondary LLM opinion opt-in */
+  .second-ask { margin-top: 0.9rem; }
+  .second-ask label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+    font-family: var(--font-label);
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: var(--ink-2);
+  }
+  .second-ask input { accent-color: var(--red); width: 15px; height: 15px; }
+  .second-ask b { color: var(--ink); font-weight: 700; }
+
+  /* ─── Error ─── */
+  .error {
+    display: none;
+    margin-top: 1.1rem;
+    padding: 0.9rem 1.1rem;
+    border: 1px solid var(--red);
+    border-radius: 2px;
+    background: var(--red-soft);
+    color: var(--red-ink);
+    font-family: var(--font-label);
+    font-weight: 600;
+    font-size: 0.9rem;
+    line-height: 1.5;
+  }
+
+  /* ─── Loading: the proofreader's blinking caret ─── */
+  .loading { display: none; margin-top: 1.5rem; font-family: var(--font-label); font-weight: 700; font-size: 0.85rem; letter-spacing: 0.09em; text-transform: uppercase; color: var(--ink-2); }
+  .loading.visible { display: block; }
+  .loading .caret {
+    display: inline-block;
+    width: 0.5em;
+    height: 0.95em;
+    margin-left: 0.35rem;
+    background: var(--red);
+    vertical-align: -0.12em;
+    animation: blink 1s steps(2, start) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* ─── Results ─── */
+  .results { display: none; margin-top: 2rem; }
+  .results.visible { display: block; }
+  .results.visible .settle { animation: settle 0.55s cubic-bezier(0.16, 1, 0.3, 1) both; }
+  @keyframes settle { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+  /* Verdict docket header */
+  .docket-head {
+    display: flex;
+    align-items: baseline;
+    gap: 1.1rem;
+    flex-wrap: wrap;
+    padding: 1.4rem 1.6rem 1.2rem;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .verdict-num {
+    font-family: var(--font-proof);
+    font-weight: 600;
+    font-size: 3.6rem;
+    line-height: 1;
+    letter-spacing: -0.03em;
+    font-variant-numeric: tabular-nums;
+  }
+  .verdict-num--ai { color: var(--red-ink); }
+  .verdict-num--human { color: var(--green-ink); }
+  .verdict-tag {
+    font-family: var(--font-label);
+    font-weight: 700;
+    font-size: 0.8rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 0.3rem 0.65rem;
+    border-radius: 2px;
+  }
+  .verdict-tag--ai { background: var(--red-soft); color: var(--red-ink); }
+  .verdict-tag--human { background: var(--green-soft); color: var(--green-ink); }
+  .desk-note {
+    flex-basis: 100%;
+    margin: 0.35rem 0 0;
+    font-style: italic;
+    font-size: 0.95rem;
+    color: var(--ink-2);
+  }
+
+  /* Docket body: signals table + margin marks, one sheet, hairline divide */
+  .docket-grid { display: grid; }
+  @media (min-width: 760px) {
+    .docket-grid { grid-template-columns: 1fr 1.35fr; }
+    .docket-grid > .docket-signals { border-right: 1px solid var(--hairline); }
+  }
+  .docket-signals { padding: 1.2rem 1.6rem 1.4rem; }
+  .docket-marks { padding: 1.2rem 1.6rem 1.4rem; }
+  .docket-h {
+    font-family: var(--font-label);
+    font-weight: 700;
+    font-size: 0.78rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+    margin: 0 0 0.8rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--hairline);
+  }
+
+  /* Signals table */
+  .signal-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 1rem;
+    padding: 0.38rem 0;
+    border-bottom: 1px solid var(--hairline);
+    font-size: 0.92rem;
+  }
+  .signal-row:last-child { border-bottom: none; }
+  .signal-name { font-family: var(--font-label); font-weight: 600; font-size: 0.78rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); }
+  .signal-value { font-family: var(--mono); font-size: 0.82rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  /* Margin marks: each sentence a proof line */
+  .mark-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.7rem;
+    padding: 0.55rem 0;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .mark-row:last-child { border-bottom: none; }
+  .mark-glyph { flex-shrink: 0; width: 20px; height: 20px; margin-top: 0.15rem; }
+  .mark-glyph svg { width: 20px; height: 20px; fill: none; stroke-width: 1.5; stroke-linecap: round; }
+  .mark-glyph .g-query { stroke: var(--red); }
+  .mark-glyph .g-quiet { stroke: var(--hairline-2); }
+  .mark-text { flex: 1; font-size: 0.95rem; line-height: 1.65; min-width: 0; overflow-wrap: anywhere; }
+  .mark-row--flagged .mark-text { text-decoration: underline wavy var(--red); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+  .mark-pct { flex-shrink: 0; font-family: var(--mono); font-size: 0.78rem; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink-2); margin-top: 0.18rem; }
+  .mark-row--flagged .mark-pct { color: var(--red-ink); }
+
+  /* Second reader slip (opt-in LLM opinion) */
+  .second-reader {
+    margin: 1.2rem 1.6rem 1.4rem;
+    border: 1px solid var(--hairline-2);
+    border-radius: 2px;
+    padding: 1rem 1.2rem;
+    background: var(--sheet);
+  }
+  .second-reader-head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.75rem; flex-wrap: wrap; }
+  .second-reader-title { font-family: var(--font-label); font-weight: 700; font-size: 0.78rem; letter-spacing: 0.1em; text-transform: uppercase; }
+  .second-reader-score { font-family: var(--mono); font-weight: 700; font-size: 1rem; font-variant-numeric: tabular-nums; }
+  .second-reader-reasoning { margin: 0.5rem 0 0; font-size: 0.92rem; color: var(--ink); }
+  .second-reader-footnote { margin: 0.55rem 0 0; font-size: 0.75rem; font-style: italic; color: var(--ink-2); }
+  .second-reader.is-error { border-color: var(--red); }
+  .second-reader.is-error .second-reader-score { color: var(--red-ink); }
+
+  /* Empty state */
+  .desk-empty { padding: 2.4rem 1.6rem; text-align: center; font-style: italic; color: var(--ink-2); }
+
+  /* ─── Humanize results ─── */
+  .humanized-head { display: flex; align-items: baseline; gap: 0.9rem; flex-wrap: wrap; margin-bottom: 0.9rem; }
+  .via-chip {
+    font-family: var(--font-label);
+    font-weight: 700;
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    border: 1px solid var(--hairline-2);
+    border-radius: 2px;
+    padding: 0.22rem 0.55rem;
+    color: var(--ink-2);
+  }
+  .humanized-text { padding: 1.35rem 1.5rem 1.5rem; white-space: pre-wrap; }
+  .setpass-grid { display: grid; gap: 1rem; margin-top: 1rem; }
+  @media (min-width: 640px) { .setpass-grid { grid-template-columns: 1fr 1fr; } }
+  .setpass { padding: 1.1rem 0 1.25rem; border-top: 1px solid var(--hairline); }
+  .setpass-h { font-family: var(--font-label); font-weight: 700; font-size: 0.75rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-2); margin: 0 0 0.4rem; }
+  .setpass-num { font-family: var(--font-proof); font-weight: 600; font-size: 2.6rem; line-height: 1.1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+  .setpass--orig .setpass-num { color: var(--red-ink); }
+  .setpass--new .setpass-num { color: var(--green-ink); }
+  .setpass-delta { margin-top: 0.3rem; font-family: var(--font-label); font-weight: 700; font-size: 0.85rem; letter-spacing: 0.05em; font-variant-numeric: tabular-nums; }
+  .setpass-delta.negative { color: var(--green-ink); }
+  .setpass-delta.positive { color: var(--red-ink); }
+  .setpass-slug { margin: 1rem 0 0; font-family: var(--font-label); font-weight: 600; font-size: 0.75rem; letter-spacing: 0.07em; text-transform: uppercase; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+
+  /* ─── Footer ─── */
+  .colophon {
+    margin-top: 2.75rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--hairline);
+    display: flex;
+    align-items: baseline;
+    gap: 1rem;
+    flex-wrap: wrap;
+    font-size: 0.85rem;
+    font-style: italic;
+    color: var(--ink-2);
+  }
+  .colophon .api-badge {
+    font-family: var(--mono);
+    font-style: normal;
+    font-size: 0.72rem;
+    color: var(--ink-2);
+    border: 1px solid var(--hairline);
+    border-radius: 2px;
+    padding: 0.1rem 0.45rem;
+  }
+
+  /* ─── Responsive ─── */
+  @media (max-width: 560px) {
+    .desk-wrap { padding: 1.25rem 0.9rem 2.25rem; }
+    .masthead h1 { font-size: 1.55rem; }
+    .actions { flex-direction: column; }
+    .btn { width: 100%; }
+    .docket-head { padding: 1.1rem 1.1rem 1rem; }
+    .verdict-num { font-size: 2.7rem; }
+    .docket-signals, .docket-marks { padding: 1.1rem; }
+    .second-reader { margin: 1.1rem; }
+    .sheet--textarea textarea { padding: 1.1rem 1.1rem 1.3rem; }
+    .word-slug { padding: 0.45rem 1.1rem; }
+  }
+</style>
 </head>
 <body>
 <div class="desk-wrap">
@@ -120,7 +584,7 @@ try {
           </div>
           <div id="llmOpinionError" style="display:none;color:var(--red-ink);font-family:var(--font-label);font-weight:600;font-size:0.85rem;"></div>
           <p class="second-reader-reasoning" id="llmOpinionReasoning"></p>
-          <p class="second-reader-footnote">An LLM judging itself is less reliable than the measured signals above — shown for comparison only.</p>
+          <p class="second-reader-footnote">An LLM judging itself is less reliable than the measured signals above, shown for comparison only.</p>
         </div>
         <div id="detectEmptyState" class="desk-empty">Nothing on the desk yet.</div>
       </div>
@@ -157,7 +621,461 @@ try {
   </footer>
 </div>
 
-<!-- Modular JavaScript -->
-<script type="module" src="js/app.js"></script>
+<script>
+/* ─── SECURITY NOTICE ───
+   API KEY HANDLING - CRITICAL SECURITY CONSTRAINTS
+   - API key stored ONLY in module-level JS variable (let apiKey = '')
+   - NEVER written to localStorage, sessionStorage, or any persistent storage
+   - NEVER sent to our FastAPI backend, logged, or included in analytics
+   - Key wiped on page refresh/reload by design (in-memory only)
+   - DO NOT "improve" this by adding localStorage persistence
+   - DO NOT log the key via console.log or any other means
+   - If any endpoint is added that could capture it, explicitly reject/ignore
+   (The color-theme preference IS persisted — it is not a secret.)
+*/
+
+/* ─── Config ─── */
+const API_BASE_URL = 'http://localhost:8000';
+
+/* ─── External API Key State (IN-MEMORY ONLY) ─── */
+let apiKey = '';           // In-memory only - wiped on refresh
+let apiProvider = 'local'; // 'local' | 'gemini' | 'openai' | 'nvidia'
+
+/* ─── DOM refs ─── */
+const $ = (sel) => document.querySelector(sel);
+
+const inputText = $('#inputText');
+const wordCount = $('#wordCount');
+const btnDetect = $('#btnDetect');
+const btnHumanize = $('#btnHumanize');
+const errorBox = $('#errorBox');
+const loading = $('#loading');
+const loadingText = $('#loadingText');
+
+const resultsDetect = $('#resultsDetect');
+const detectScore = $('#detectScore');
+const detectLabel = $('#detectLabel');
+const featuresEl = $('#features');
+const sentencesEl = $('#sentences');
+const detectInterpretation = $('#detectInterpretation');
+const detectEmptyState = $('#detectEmptyState');
+
+const llmAsk = $('#llmAsk');
+const llmAskLabel = $('#llmAskLabel');
+const llmAskProvider = $('#llmAskProvider');
+const llmSecondaryToggle = $('#llmSecondaryToggle');
+const llmOpinion = $('#llmOpinion');
+const llmOpinionTitle = $('#llmOpinionTitle');
+const llmOpinionScore = $('#llmOpinionScore');
+const llmOpinionError = $('#llmOpinionError');
+const llmOpinionReasoning = $('#llmOpinionReasoning');
+
+const resultsHumanize = $('#resultsHumanize');
+const humanizedText = $('#humanizedText');
+const origScore = $('#origScore');
+const newScore = $('#newScore');
+const deltaEl = $('#delta');
+const backendUsed = $('#backendUsed');
+const hzTime = $('#hzTime');
+
+/* ─── Theme toggle (the only thing persisted — it is not a secret) ─── */
+const themeToggle = $('#themeToggle');
+const iconMoon = $('#iconMoon');
+const iconSun = $('#iconSun');
+const themeLabel = $('#themeLabel');
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  const dark = theme === 'dark';
+  iconMoon.style.display = dark ? 'none' : '';
+  iconSun.style.display = dark ? '' : 'none';
+  themeLabel.textContent = dark ? 'Light' : 'Dark';
+}
+applyTheme(document.documentElement.dataset.theme || 'light');
+themeToggle.addEventListener('click', () => {
+  const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  applyTheme(next);
+  try { localStorage.setItem('copydesk-theme', next); } catch (e) { /* non-fatal */ }
+});
+
+/* ─── API key dropdown (vanilla, no Alpine) ─── */
+const apikeyToggle = $('#apikeyToggle');
+const apikeyPanel = $('#apikeyPanel');
+const apiProviderSelect = $('#apiProviderSelect');
+const apiKeyInput = $('#apiKeyInput');
+const apikeyFieldRow = $('#apikeyFieldRow');
+
+function setPanelOpen(open) {
+  apikeyPanel.hidden = !open;
+  apikeyToggle.setAttribute('aria-expanded', String(open));
+}
+apikeyToggle.addEventListener('click', (e) => {
+  e.stopPropagation();
+  setPanelOpen(apikeyPanel.hidden);
+});
+document.addEventListener('click', (e) => {
+  if (!apikeyPanel.hidden && !apikeyPanel.contains(e.target) && e.target !== apikeyToggle) {
+    setPanelOpen(false);
+  }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !apikeyPanel.hidden) setPanelOpen(false);
+});
+// Keep the in-memory key state in sync; the key never leaves JS memory.
+function syncKeyState() {
+  apiProvider = apiProviderSelect.value;
+  apiKey = apiKeyInput.value;
+  apikeyFieldRow.hidden = apiProvider === 'local';
+  wordCountUpdate();
+}
+apiProviderSelect.addEventListener('change', syncKeyState);
+apiKeyInput.addEventListener('input', syncKeyState);
+$('#apikeyClear').addEventListener('click', () => { apiKeyInput.value = ''; syncKeyState(); });
+
+/* ─── Helpers ─── */
+function friendlyError(e) {
+  if (e instanceof TypeError && String(e.message).includes('fetch')) {
+    return 'Cannot reach the local API at ' + API_BASE_URL + '. Start it with: python -m api.main';
+  }
+  return e.message || 'Something went wrong.';
+}
+function setError(msg) {
+  errorBox.textContent = msg;
+  errorBox.style.display = msg ? 'block' : 'none';
+}
+function setLoading(show, text = 'Reading the proof') {
+  loadingText.textContent = text;
+  loading.classList.toggle('visible', show);
+  btnDetect.disabled = show;
+  btnHumanize.disabled = show;
+}
+function hideResults() {
+  resultsDetect.classList.remove('visible');
+  resultsHumanize.classList.remove('visible');
+  llmOpinion.style.display = 'none';
+}
+function wordCountUpdate() {
+  const text = inputText.value.trim();
+  const count = text ? text.split(/\s+/).length : 0;
+  wordCount.textContent = `${count} word${count !== 1 ? 's' : ''}`;
+  // Show the opt-in checkbox only when an external provider + key are set
+  const names = { gemini: 'Gemini', openai: 'OpenAI', nvidia: 'NVIDIA' };
+  if (apiProvider !== 'local' && apiKey) {
+    llmAskProvider.textContent = names[apiProvider] || apiProvider;
+    llmAskLabel.innerHTML = `Also ask <b id="llmAskProvider">${names[apiProvider] || apiProvider}</b> for a second reading (uses your API key)`;
+    llmSecondaryToggle.style.display = 'block';
+    llmAsk.checked = false;
+  } else {
+    llmSecondaryToggle.style.display = 'none';
+    llmAsk.checked = false;
+  }
+}
+
+/* ─── System Prompt (shared with local pipeline) ─── */
+const HUMANIZE_SYSTEM_PROMPT = `You are a text humanizer. Rewrite the input text to sound more natural and human-written, while preserving the exact meaning and information content.
+
+Guidelines:
+- Vary sentence length and structure significantly (short, medium, long sentences mixed)
+- Use contractions naturally (don't, can't, it's, I've, you're, etc.)
+- Introduce minor imperfections: occasional redundancy, conversational fillers, varied transitions
+- Avoid AI-typical phrasing: "In conclusion", "It is important to note", "Furthermore", "Moreover", "Additionally", "delve", "tapestry", "navigate", "unlock", "foster", "leverage", "robust framework", "plays a crucial role", "in essence", "overall", "therefore", "nevertheless", "firstly", "secondly"
+- Don't use overly balanced parallel structure in every sentence
+- Keep the original meaning 100% intact — no hallucination, no added facts
+- Write like a real person explaining something to a friend: natural flow, personal voice
+- Preserve formatting (paragraphs, lists, code blocks) if present
+
+Return ONLY the rewritten text, no explanations or meta-commentary.`;
+
+/* ─── Single shared external-LLM client (proxied via our backend) ───
+   Calls our /humanize-external proxy endpoint to avoid CORS issues.
+   The proxy forwards to the actual provider (Gemini/OpenAI/NVIDIA). */
+async function callLLM(provider, prompt, key) {
+  if (!key) throw new Error('No API key provided');
+  const res = await fetch(`${API_BASE_URL}/humanize-external`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      text: prompt,
+      provider,
+      api_key: key,
+      temperature: 0.7,
+      max_tokens: 512
+    })
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const msg = err.detail || err.message || `${provider} API error: ${res.status}`;
+    throw new Error(msg);
+  }
+  const data = await res.json();
+  return data.humanized_text || '';
+}
+async function callGeminiAPI(text, key) {
+  return callLLM('gemini', `${HUMANIZE_SYSTEM_PROMPT}\n\nRewrite this text to sound more natural and human:\n\n${text}`, key);
+}
+async function callOpenAIAPI(text, key) {
+  return callLLM('openai', `${HUMANIZE_SYSTEM_PROMPT}\n\nRewrite this text to sound more natural and human:\n\n${text}`, key);
+}
+async function callNvidiaAPI(text, key) {
+  return callLLM('nvidia', `${HUMANIZE_SYSTEM_PROMPT}\n\nRewrite this text to sound more natural and human:\n\n${text}`, key);
+}
+
+/* ─── External Humanize Flow ─── */
+async function humanizeExternal(text) {
+  if (!apiKey) throw new Error('No API key provided');
+  let humanized;
+  if (apiProvider === 'gemini') humanized = await callGeminiAPI(text, apiKey);
+  else if (apiProvider === 'openai') humanized = await callOpenAIAPI(text, apiKey);
+  else if (apiProvider === 'nvidia') humanized = await callNvidiaAPI(text, apiKey);
+  else throw new Error('Unknown provider');
+  if (!humanized) throw new Error('Empty response from API');
+  return humanized;
+}
+
+/* ─── Secondary LLM detection opinion ───
+   Opt-in, secondary opinion; the local detector always runs first and is
+   the primary result. Failures are shown inline in the sub-panel only. */
+async function askLLMDetect(text) {
+  if (!apiKey) throw new Error('No API key provided');
+  if (apiProvider === 'local') throw new Error('Select an external provider first');
+
+  const prompt =
+    'Analyze the following text and assess the likelihood it was written by ' +
+    'an AI language model versus a human. Respond in this exact format:\n' +
+    'LIKELIHOOD: [0-100]\n' +
+    'REASONING: [one sentence]\n\n' +
+    'Text: ' + text;
+
+  const raw = await callLLM(apiProvider, prompt, apiKey);
+  const match = raw.match(/LIKELIHOOD:\s*(\d{1,3})/i);
+  const reasoning = (raw.match(/REASONING:\s*(.+)/i) || [null, null])[1];
+
+  let likelihood = null;
+  if (match) likelihood = Math.min(100, Math.max(0, parseInt(match[1], 10)));
+  if (likelihood === null) throw new Error('Could not parse likelihood from response');
+
+  return {
+    provider: apiProvider,
+    likelihood,
+    reasoning: (reasoning || '').trim().slice(0, 300),
+  };
+}
+
+/* ─── API Calls ─── */
+async function apiDetect(text) {
+  const res = await fetch(`${API_BASE_URL}/detect`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+async function apiHumanize(text, opts = {}) {
+  const res = await fetch(`${API_BASE_URL}/humanize`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, ...opts }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+/* ─── Drawn marks (inline SVG, one stroke weight) ─── */
+const QUERY_SVG = '<svg viewBox="0 0 20 20" aria-hidden="true" class="g-query"><circle cx="10" cy="10" r="8.2"/><path d="M7.8 7.6a2.2 2.2 0 1 1 3 2.05c-.7.28-.8.75-.8 1.35"/><circle cx="10" cy="13.6" r="0.4" fill="currentColor" stroke="none"/></svg>';
+const QUIET_SVG = '<svg viewBox="0 0 20 20" aria-hidden="true" class="g-quiet"><circle cx="10" cy="10" r="8.2"/></svg>';
+
+/* ─── Escape HTML ───
+   Pasted text is untrusted and rendered via innerHTML, so it MUST be escaped. */
+const HTML_ESCAPES = { '&': '\u0026amp;', '<': '\u0026lt;', '>': '\u0026gt;', '"': '\u0026quot;', "'": '\u0026#39;' };
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, (c) => HTML_ESCAPES[c]);
+}
+
+/* ─── Render Detect Results ─── */
+function renderDetect(data, llm = null) {
+  const p = data.ai_probability;
+  detectScore.textContent = `${p.toFixed(1)}%`;
+  detectScore.className = 'verdict-num ' + (data.is_ai ? 'verdict-num--ai' : 'verdict-num--human');
+  detectLabel.textContent = data.label;
+  detectLabel.className = 'verdict-tag ' + (data.is_ai ? 'verdict-tag--ai' : 'verdict-tag--human');
+
+  let interpretation = '';
+  if (p > 70) interpretation = 'Reads like it was written by a model, not a person.';
+  else if (p < 30) interpretation = 'Reads human to me.';
+  else interpretation = 'Hard to say for sure: could go either way.';
+  detectInterpretation.textContent = interpretation;
+  detectInterpretation.style.display = 'block';
+  detectEmptyState.style.display = 'none';
+
+  // Signals table
+  featuresEl.innerHTML = '';
+  const fb = data.feature_breakdown;
+  const featureOrder = [
+    ['perplexity', 'Perplexity'],
+    ['burstiness', 'Burstiness'],
+    ['avg_sentence_length', 'Avg Sentence Length'],
+    ['sentence_length_var', 'Sentence Length Variance'],
+    ['type_token_ratio', 'Type-Token Ratio'],
+    ['punctuation_ratio', 'Punctuation Ratio'],
+    ['bigram_uniqueness', 'Bigram Uniqueness'],
+    ['avg_word_length', 'Avg Word Length'],
+    ['pos_noun', 'POS: Nouns'],
+    ['pos_verb', 'POS: Verbs'],
+    ['pos_adj', 'POS: Adjectives'],
+    ['pos_adv', 'POS: Adverbs'],
+    ['pos_pron', 'POS: Pronouns'],
+    ['pos_other', 'POS: Other'],
+  ];
+  for (const [key, label] of featureOrder) {
+    if (fb[key] !== undefined) {
+      const row = document.createElement('div');
+      row.className = 'signal-row';
+      row.innerHTML = `<span class="signal-name">${label}</span><span class="signal-value">${Number(fb[key]).toFixed(key.includes('ratio') || key.includes('pos_') ? 4 : 2)}</span>`;
+      featuresEl.appendChild(row);
+    }
+  }
+
+  // Margin marks, worst first
+  sentencesEl.innerHTML = '';
+  let i = 0;
+  for (const s of data.sentence_scores) {
+    const flagged = s.ai_score >= 70;
+    const item = document.createElement('div');
+    item.className = 'mark-row' + (flagged ? ' mark-row--flagged' : '');
+    item.style.animationDelay = `${Math.min(i, 12) * 35}ms`;
+    item.innerHTML =
+      `<span class="mark-glyph">${flagged ? QUERY_SVG : QUIET_SVG}</span>` +
+      `<span class="mark-text">${escapeHtml(s.sentence)}</span>` +
+      `<span class="mark-pct">${s.ai_score.toFixed(1)}%</span>`;
+    sentencesEl.appendChild(item);
+    i++;
+  }
+
+  // Second reader (opt-in) — hidden when not requested
+  llmOpinion.style.display = llm ? 'block' : 'none';
+  if (llm) {
+    llmOpinionTitle.textContent = 'Second reader — via ' + (llm.provider || 'LLM');
+    if (llm.error) {
+      llmOpinion.classList.add('is-error');
+      llmOpinionScore.textContent = '—';
+      llmOpinionError.style.display = 'block';
+      llmOpinionError.textContent = llm.error;
+      llmOpinionReasoning.textContent = '';
+    } else {
+      llmOpinion.classList.remove('is-error');
+      llmOpinionScore.textContent = llm.likelihood + '%';
+      llmOpinionReasoning.textContent = llm.reasoning || '(no reasoning provided)';
+      llmOpinionError.style.display = 'none';
+      llmOpinionError.textContent = '';
+    }
+  }
+
+  resultsDetect.classList.add('visible');
+  resultsHumanize.classList.remove('visible');
+}
+
+/* ─── Render Humanize Results ─── */
+function renderHumanize(data) {
+  humanizedText.textContent = data.humanized_text;
+  origScore.textContent = `${data.original_ai_probability.toFixed(1)}%`;
+  if (data.humanized_ai_probability !== null && data.humanized_ai_probability !== undefined) {
+    newScore.textContent = `${data.humanized_ai_probability.toFixed(1)}%`;
+    const delta = data.humanized_ai_probability - data.original_ai_probability;
+    deltaEl.textContent = `${delta >= 0 ? '+' : ''}${delta.toFixed(1)}%`;
+    deltaEl.className = 'setpass-delta ' + (delta < 0 ? 'negative' : 'positive');
+  } else {
+    newScore.textContent = '—%';
+    deltaEl.textContent = '';
+  }
+  backendUsed.textContent = data.backend_used;
+  hzTime.textContent = Number(data.elapsed_seconds).toFixed(2);
+
+  const badge = document.getElementById('humanizeViaBadge');
+  if (badge) {
+    badge.textContent = 'via ' + (data.backend_used || 'local');
+    badge.style.display = 'inline-block';
+  }
+
+  resultsHumanize.classList.add('visible');
+  resultsDetect.classList.remove('visible');
+}
+
+/* ─── Event Handlers ─── */
+inputText.addEventListener('input', wordCountUpdate);
+
+btnDetect.addEventListener('click', async () => {
+  const text = inputText.value.trim();
+  if (!text) { setError('Paste some text first: the desk cannot read an empty sheet.'); return; }
+  setError('');
+  hideResults();
+  setLoading(true, 'Reading the proof');
+  try {
+    // Local detector ALWAYS runs first and is the primary result.
+    const data = await apiDetect(text);
+
+    // Optional second reader - opt-in, never blocks the local result.
+    let llm = null;
+    if (llmAsk.checked && apiProvider !== 'local' && apiKey) {
+      try {
+        llm = await askLLMDetect(text);
+      } catch (e) {
+        llm = { error: e.message, provider: apiProvider };
+      }
+    }
+
+    renderDetect(data, llm);
+  } catch (e) {
+    setError(friendlyError(e));
+  } finally {
+    setLoading(false);
+  }
+});
+
+btnHumanize.addEventListener('click', async () => {
+  const text = inputText.value.trim();
+  if (!text) { setError('Paste some text first: the desk cannot rewrite an empty sheet.'); return; }
+  setError('');
+  hideResults();
+  setLoading(true, 'Setting the human pass');
+  try {
+    let data;
+    if (apiProvider === 'local') {
+      // Local backend via our API
+      data = await apiHumanize(text, { re_detect: true });
+    } else {
+      // External API - proxied from our backend, then re-detect via our API
+      const t0 = performance.now();
+      const humanized = await humanizeExternal(text);
+      const detectRes = await apiDetect(humanized);
+      const elapsed = (performance.now() - t0) / 1000;
+      data = {
+        original_text: text,
+        humanized_text: humanized,
+        original_ai_probability: 0, // filled below
+        humanized_ai_probability: detectRes.ai_probability,
+        backend_used: apiProvider,
+        elapsed_seconds: elapsed, // number — rendered with toFixed at display time
+      };
+      const origDetect = await apiDetect(text);
+      data.original_ai_probability = origDetect.ai_probability;
+    }
+    renderHumanize(data);
+  } catch (e) {
+    setError(friendlyError(e) || 'Humanize failed — check your API key and try again');
+  } finally {
+    setLoading(false);
+  }
+});
+
+/* ─── Init ─── */
+wordCountUpdate();
+</script>
 </body>
 </html>
